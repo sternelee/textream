@@ -374,21 +374,27 @@ class NotchOverlayController: NSObject {
     }
 
     func dismiss() {
+        guard !isDismissing else { return }
+        isDismissing = true
+
         // Trigger the shrink animation
         speechRecognizer.shouldDismiss = true
         speechRecognizer.forceStop()
 
         // Wait for animation, then remove panel
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.stopMouseTracking()
-            self?.stopCursorTracking()
-            self?.removeStopButton()
-            self?.removeEscMonitor()
-            self?.panel?.orderOut(nil)
-            self?.panel = nil
-            self?.frameTracker = nil
-            self?.speechRecognizer.shouldDismiss = false
-            self?.onComplete?()
+            guard let self else { return }
+            self.stopMouseTracking()
+            self.stopCursorTracking()
+            self.removeStopButton()
+            self.removeEscMonitor()
+            self.cancellables.removeAll()
+            self.panel?.orderOut(nil)
+            self.panel = nil
+            self.frameTracker = nil
+            self.speechRecognizer.shouldDismiss = false
+            self.isDismissing = false
+            self.onComplete?()
         }
     }
 
@@ -424,41 +430,40 @@ class NotchOverlayController: NSObject {
     }
 
     private func observeDismiss() {
-        // Poll for shouldAdvancePage (next page requested from overlay)
+        // Single timer polls all conditions instead of two separate timers
         Timer.publish(every: 0.1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self else { return }
+
+                // Check for page advance
                 if self.speechRecognizer.shouldAdvancePage {
                     self.speechRecognizer.shouldAdvancePage = false
                     self.onNextPage?()
                 }
-                // Poll for page jump from page picker
+
+                // Check for page jump from page picker
                 if let targetIndex = self.overlayContent.jumpToPageIndex {
                     self.overlayContent.jumpToPageIndex = nil
                     TextreamService.shared.jumpToPage(index: targetIndex)
                 }
-            }
-            .store(in: &cancellables)
 
-        // Poll for shouldDismiss becoming true (from view setting it on completion)
-        Timer.publish(every: 0.1, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                guard let self, self.speechRecognizer.shouldDismiss, !self.isDismissing else { return }
-                self.isDismissing = true
-                // Wait for shrink animation, then cleanup
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    self.stopMouseTracking()
-                    self.stopCursorTracking()
-                    self.removeStopButton()
-                    self.removeEscMonitor()
-                    self.cancellables.removeAll()
-                    self.panel?.orderOut(nil)
-                    self.panel = nil
-                    self.frameTracker = nil
-                    self.speechRecognizer.shouldDismiss = false
-                    self.onComplete?()
+                // Check for dismiss
+                if self.speechRecognizer.shouldDismiss, !self.isDismissing {
+                    self.isDismissing = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                        guard let self else { return }
+                        self.stopMouseTracking()
+                        self.stopCursorTracking()
+                        self.removeStopButton()
+                        self.removeEscMonitor()
+                        self.cancellables.removeAll()
+                        self.panel?.orderOut(nil)
+                        self.panel = nil
+                        self.frameTracker = nil
+                        self.speechRecognizer.shouldDismiss = false
+                        self.onComplete?()
+                    }
                 }
             }
             .store(in: &cancellables)
