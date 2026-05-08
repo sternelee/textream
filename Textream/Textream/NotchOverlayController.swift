@@ -263,6 +263,8 @@ class NotchOverlayController: NSObject {
         if settings.notchDisplayMode == .followMouse {
             startMouseTracking()
         }
+
+        installKeyMonitor()
     }
 
     private func showFollowCursor(settings: NotchSettings, screen: NSScreen) {

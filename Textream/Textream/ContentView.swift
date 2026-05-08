@@ -532,10 +532,8 @@ Happy presenting! [wave]
             get: { service.currentPageIndex },
             set: { newValue in
                 if let index = newValue {
-                    DispatchQueue.main.async {
-                        withAnimation(.easeInOut(duration: 0.15)) {
-                            service.currentPageIndex = index
-                        }
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        service.currentPageIndex = index
                     }
                 }
             }
