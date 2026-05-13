@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		446966B42F37E47300AF141F /* Textream.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Textream.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		88AA00112F37E47300AF141F /* TextreamiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TextreamiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +17,27 @@
 			path = Textream;
 			sourceTree = "<group>";
 		};
+		88AA00122F37E47300AF141F /* Core */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Textream/Core;
+			sourceTree = "<group>";
+		};
+		88AA00132F37E47300AF141F /* TextreamiOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TextreamiOS;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		446966B12F37E47300AF141F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88AA00142F37E47300AF141F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +51,8 @@
 			isa = PBXGroup;
 			children = (
 				446966B62F37E47300AF141F /* Textream */,
+				88AA00122F37E47300AF141F /* Core */,
+				88AA00132F37E47300AF141F /* TextreamiOS */,
 				446966B52F37E47300AF141F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				446966B42F37E47300AF141F /* Textream.app */,
+				88AA00112F37E47300AF141F /* TextreamiOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +91,29 @@
 			productReference = 446966B42F37E47300AF141F /* Textream.app */;
 			productType = "com.apple.product-type.application";
 		};
+		88AA00152F37E47300AF141F /* TextreamiOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 88AA00162F37E47300AF141F /* Build configuration list for PBXNativeTarget "TextreamiOS" */;
+			buildPhases = (
+				88AA00172F37E47300AF141F /* Sources */,
+				88AA00142F37E47300AF141F /* Frameworks */,
+				88AA00182F37E47300AF141F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				88AA00122F37E47300AF141F /* Core */,
+				88AA00132F37E47300AF141F /* TextreamiOS */,
+			);
+			name = TextreamiOS;
+			packageProductDependencies = (
+			);
+			productName = TextreamiOS;
+			productReference = 88AA00112F37E47300AF141F /* TextreamiOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -81,6 +125,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					446966B32F37E47300AF141F = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					88AA00152F37E47300AF141F = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -100,6 +147,7 @@
 			projectRoot = "";
 			targets = (
 				446966B32F37E47300AF141F /* Textream */,
+				88AA00152F37E47300AF141F /* TextreamiOS */,
 			);
 		};
 /* End PBXProject section */
@@ -112,10 +160,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		88AA00182F37E47300AF141F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		446966B02F37E47300AF141F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88AA00172F37E47300AF141F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -325,6 +387,70 @@
 			};
 			name = Release;
 		};
+		88AA00192F37E47300AF141F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RJA7656U34;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TextreamiOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Textream iOS";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Textream needs microphone access to power speech-aware teleprompter modes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Textream uses speech recognition to follow your script as you speak.";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.5.2;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fka.textream.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		88AA00202F37E47300AF141F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RJA7656U34;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = TextreamiOS/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Textream iOS";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Textream needs microphone access to power speech-aware teleprompter modes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Textream uses speech recognition to follow your script as you speak.";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.5.2;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fka.textream.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -342,6 +468,15 @@
 			buildConfigurations = (
 				446966C22F37E47400AF141F /* Debug */,
 				446966C32F37E47400AF141F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		88AA00162F37E47300AF141F /* Build configuration list for PBXNativeTarget "TextreamiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				88AA00192F37E47300AF141F /* Debug */,
+				88AA00202F37E47300AF141F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

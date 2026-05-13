@@ -1,0 +1,14 @@
+{
+  "name": "ios-core-migration",
+  "taskFile": ".ralph/ios-core-migration.md",
+  "iteration": 5,
+  "maxIterations": 20,
+  "itemsPerIteration": 5,
+  "reflectEvery": 3,
+  "reflectInstructions": "REFLECTION CHECKPOINT\n\nPause and reflect on your progress:\n1. What has been accomplished so far?\n2. What's working well?\n3. What's not working or blocking progress?\n4. Should the approach be adjusted?\n5. What are the next priorities?\n\nUpdate the task file with your reflection, then continue working.",
+  "active": false,
+  "status": "completed",
+  "startedAt": "2026-05-13T14:38:55.924Z",
+  "lastReflectionAt": 4,
+  "completedAt": "2026-05-13T15:20:23.974Z"
+}
