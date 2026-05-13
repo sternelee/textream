@@ -1473,7 +1473,7 @@ struct SettingsView: View {
                     }
                     .controlSize(.small)
                     .buttonStyle(.bordered)
-                    .disabled(settings.openAIAPIKey.isEmpty)
+                    .disabled(settings.openAIAPIKey.isEmpty || AIScriptService.shared.isGenerating)
                     Spacer()
                 }
 
@@ -1631,6 +1631,7 @@ struct SettingsView: View {
         settings.aiAutoGenerateThreshold = 0.8
         settings.lastAIScenario = nil
         settings.lastAIContext = ""
+        AIScriptService.shared.availableModels = AIScriptService.defaultModels
     }
 
     private func refreshScreens() {

@@ -10,6 +10,7 @@ import Foundation
 enum AIScriptError: Error, LocalizedError {
     case missingAPIKey
     case invalidURL
+    case requestInProgress
     case networkError(Error)
     case apiError(String)
     case decodingError
@@ -21,6 +22,8 @@ enum AIScriptError: Error, LocalizedError {
             return "OpenAI API Key is not configured. Add it in Settings → AI."
         case .invalidURL:
             return "Invalid API URL. Check your settings."
+        case .requestInProgress:
+            return "Another AI generation is already in progress. Stop it before starting a new one."
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .apiError(let message):
@@ -43,6 +46,7 @@ class AIScriptService {
     var modelName = ""
 
     private var urlSession: URLSession?
+    private var activeRequestID: UUID?
     fileprivate var currentTask: URLSessionDataTask?
 
     /// Default models shown before fetching from remote
@@ -70,8 +74,11 @@ class AIScriptService {
 
     /// Stop any ongoing generation
     func stop() {
+        activeRequestID = nil
         currentTask?.cancel()
         currentTask = nil
+        urlSession?.invalidateAndCancel()
+        urlSession = nil
         isGenerating = false
     }
 
@@ -82,6 +89,60 @@ class AIScriptService {
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
+        let fullUserPrompt = """
+Scenario: \(scenario.label)
+\(userPrompt)
+
+Generate a complete script suitable for reading on a teleprompter. Keep it natural and conversational.
+"""
+        performStreamedRequest(
+            scenario: scenario,
+            userPrompt: fullUserPrompt,
+            onUpdate: onUpdate,
+            onComplete: onComplete
+        )
+    }
+
+    /// Continue generating from existing text
+    func continueFrom(
+        existingText: String,
+        scenario: AIScenario,
+        userPrompt: String,
+        onUpdate: @escaping (String) -> Void,
+        onComplete: @escaping (Result<String, AIScriptError>) -> Void
+    ) {
+        let fullUserPrompt = """
+Continue the following script from where it left off. Maintain the same tone, style, and format.
+Match the voice and pacing of the existing text. Add natural transitions.
+
+Existing script:
+---
+\(existingText)
+---
+
+Continue the script. The user also provided: \(userPrompt)
+"""
+        performStreamedRequest(
+            scenario: scenario,
+            userPrompt: fullUserPrompt,
+            onUpdate: onUpdate,
+            onComplete: onComplete
+        )
+    }
+
+    // MARK: - Shared Streaming Request
+
+    private func performStreamedRequest(
+        scenario: AIScenario,
+        userPrompt: String,
+        onUpdate: @escaping (String) -> Void,
+        onComplete: @escaping (Result<String, AIScriptError>) -> Void
+    ) {
+        guard activeRequestID == nil, currentTask == nil, !isGenerating else {
+            onComplete(.failure(.requestInProgress))
+            return
+        }
+
         let apiKey = NotchSettings.shared.openAIAPIKey
         guard !apiKey.isEmpty else {
             onComplete(.failure(.missingAPIKey))
@@ -100,20 +161,14 @@ class AIScriptService {
         generatedText = ""
         error = nil
         modelName = model
-
-        let systemPrompt = scenario.systemPrompt
-        let fullUserPrompt = """
-Scenario: \(scenario.label)
-\(userPrompt)
-
-Generate a complete script suitable for reading on a teleprompter. Keep it natural and conversational.
-"""
+        let requestID = UUID()
+        activeRequestID = requestID
 
         let body: [String: Any] = [
             "model": model,
             "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": fullUserPrompt]
+                ["role": "system", "content": scenario.systemPrompt],
+                ["role": "user", "content": userPrompt]
             ],
             "stream": true,
             "temperature": 0.8,
@@ -133,7 +188,7 @@ Generate a complete script suitable for reading on a teleprompter. Keep it natur
         request.httpBody = bodyData
 
         // Use URLSession delegate for streaming
-        let delegate = StreamingDelegate(service: self, onUpdate: onUpdate, onComplete: onComplete)
+        let delegate = StreamingDelegate(service: self, requestID: requestID, onUpdate: onUpdate, onComplete: onComplete)
         let streamSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: .main)
         self.urlSession = streamSession
 
@@ -142,80 +197,41 @@ Generate a complete script suitable for reading on a teleprompter. Keep it natur
         streamTask.resume()
     }
 
-    /// Continue generating from existing text
-    func continueFrom(
-        existingText: String,
-        scenario: AIScenario,
-        userPrompt: String,
-        onUpdate: @escaping (String) -> Void,
-        onComplete: @escaping (Result<String, AIScriptError>) -> Void
-    ) {
-        let apiKey = NotchSettings.shared.openAIAPIKey
-        guard !apiKey.isEmpty else {
-            onComplete(.failure(.missingAPIKey))
-            return
-        }
-
-        let model = NotchSettings.shared.openAIModel
-        let baseURL = NotchSettings.shared.openAIBaseURL
-
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            onComplete(.failure(.invalidURL))
-            return
-        }
-
-        isGenerating = true
-        generatedText = ""
-        error = nil
-        modelName = model
-
-        let systemPrompt = scenario.systemPrompt
-        let fullUserPrompt = """
-Continue the following script from where it left off. Maintain the same tone, style, and format.
-Match the voice and pacing of the existing text. Add natural transitions.
-
-Existing script:
----
-\(existingText)
----
-
-Continue the script. The user also provided: \(userPrompt)
-"""
-
-        let body: [String: Any] = [
-            "model": model,
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": fullUserPrompt]
-            ],
-            "stream": true,
-            "temperature": 0.8,
-            "max_tokens": 4096
-        ]
-
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
-            isGenerating = false
-            onComplete(.failure(.decodingError))
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = bodyData
-
-        let delegate = StreamingDelegate(service: self, onUpdate: onUpdate, onComplete: onComplete)
-        let streamSession = URLSession(configuration: .default, delegate: delegate, delegateQueue: .main)
-        self.urlSession = streamSession
-
-        let streamTask = streamSession.dataTask(with: request)
-        self.currentTask = streamTask
-        streamTask.resume()
+    fileprivate func isRequestActive(_ requestID: UUID) -> Bool {
+        activeRequestID == requestID
     }
 
-    func appendChunk(_ chunk: String) {
+    fileprivate func appendChunk(_ chunk: String, for requestID: UUID) -> String? {
+        guard activeRequestID == requestID else { return nil }
         generatedText += chunk
+        return generatedText
+    }
+
+    fileprivate func finishStreamingRequest(_ requestID: UUID) -> String? {
+        guard activeRequestID == requestID else { return nil }
+        let finalText = generatedText
+        activeRequestID = nil
+        currentTask = nil
+        urlSession = nil
+        isGenerating = false
+        return finalText
+    }
+
+    fileprivate func failStreamingRequest(_ requestID: UUID) -> Bool {
+        guard activeRequestID == requestID else { return false }
+        activeRequestID = nil
+        currentTask = nil
+        urlSession = nil
+        isGenerating = false
+        return true
+    }
+
+    fileprivate func completeStreamingRequest(_ requestID: UUID) {
+        guard activeRequestID == requestID else { return }
+        activeRequestID = nil
+        currentTask = nil
+        urlSession = nil
+        isGenerating = false
     }
 
     /// Pre-generate the next page of script while preserving context continuity.
@@ -291,14 +307,8 @@ Generate the next page of the script. Maintain the same tone, style, and format.
                 }
 
                 if httpResponse.statusCode != 200 {
-                    if let data = data,
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let err = json["error"] as? [String: Any],
-                       let message = err["message"] as? String {
-                        onComplete(.failure(.apiError(message)))
-                    } else {
-                        onComplete(.failure(.apiError("HTTP \(httpResponse.statusCode)")))
-                    }
+                    let message = Self.extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                    onComplete(.failure(.apiError(message)))
                     return
                 }
 
@@ -349,14 +359,8 @@ Generate the next page of the script. Maintain the same tone, style, and format.
                 }
 
                 if httpResponse.statusCode != 200 {
-                    if let data = data,
-                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let err = json["error"] as? [String: Any],
-                       let message = err["message"] as? String {
-                        completion(.failure(.apiError(message)))
-                    } else {
-                        completion(.failure(.apiError("HTTP \(httpResponse.statusCode)")))
-                    }
+                    let message = Self.extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                    completion(.failure(.apiError(message)))
                     return
                 }
 
@@ -389,20 +393,43 @@ Generate the next page of the script. Maintain the same tone, style, and format.
         }
         task.resume()
     }
+
+    // MARK: - Error Message Extraction
+
+    fileprivate static func extractErrorMessage(from data: Data?, statusCode: Int) -> String {
+        guard let data = data else {
+            return "HTTP \(statusCode)"
+        }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let err = json["error"] as? [String: Any],
+           let message = err["message"] as? String {
+            return message
+        }
+        if let rawString = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawString.isEmpty {
+            let maxLength = 200
+            let truncated = rawString.count > maxLength ? String(rawString.prefix(maxLength)) + "..." : rawString
+            return "HTTP \(statusCode): \(truncated)"
+        }
+        return "HTTP \(statusCode)"
+    }
 }
 
 // MARK: - Streaming Delegate
 
 private class StreamingDelegate: NSObject, URLSessionDataDelegate {
     weak var service: AIScriptService?
+    let requestID: UUID
     let onUpdate: (String) -> Void
     let onComplete: ((Result<String, AIScriptError>) -> Void)?
     private var buffer = Data()
+    private var responseBuffer = Data()
     private var receivedData = false
     private var didCallCompletion = false
 
-    init(service: AIScriptService, onUpdate: @escaping (String) -> Void, onComplete: ((Result<String, AIScriptError>) -> Void)? = nil) {
+    init(service: AIScriptService, requestID: UUID, onUpdate: @escaping (String) -> Void, onComplete: ((Result<String, AIScriptError>) -> Void)? = nil) {
         self.service = service
+        self.requestID = requestID
         self.onUpdate = onUpdate
         self.onComplete = onComplete
     }
@@ -415,6 +442,7 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         receivedData = true
+        responseBuffer.append(data)
         buffer.append(data)
 
         // Process complete lines
@@ -428,9 +456,8 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
             let jsonString = String(lineString.dropFirst(6))
             if jsonString == "[DONE]" {
                 DispatchQueue.main.async {
-                    self.service?.isGenerating = false
-                    self.service?.currentTask = nil
-                    if let text = self.service?.generatedText, !text.isEmpty {
+                    guard let text = self.service?.finishStreamingRequest(self.requestID) else { return }
+                    if !text.isEmpty {
                         self.callCompletionOnce(.success(text))
                     } else {
                         self.callCompletionOnce(.failure(.noContent))
@@ -447,30 +474,34 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
 
             if let content = delta["content"] as? String {
                 DispatchQueue.main.async {
-                    self.service?.appendChunk(content)
-                    self.onUpdate(self.service?.generatedText ?? "")
+                    guard let text = self.service?.appendChunk(content, for: self.requestID) else { return }
+                    self.onUpdate(text)
                 }
             }
         }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        defer { session.invalidateAndCancel() }
         DispatchQueue.main.async {
-            self.service?.isGenerating = false
-            self.service?.currentTask = nil
+            guard let service = self.service else { return }
+            guard service.isRequestActive(self.requestID) else { return }
 
             if let error = error as NSError? {
                 if error.code == NSURLErrorCancelled {
-                    self.callCompletionOnce(.success(self.service?.generatedText ?? ""))
+                    let partialText = service.finishStreamingRequest(self.requestID) ?? ""
+                    self.callCompletionOnce(.success(partialText))
                     return
                 }
+                _ = service.failStreamingRequest(self.requestID)
                 self.callCompletionOnce(.failure(.networkError(error)))
                 return
             }
 
-            if let text = self.service?.generatedText, !text.isEmpty {
+            if let text = service.finishStreamingRequest(self.requestID), !text.isEmpty {
                 self.callCompletionOnce(.success(text))
             } else if !self.receivedData {
+                service.completeStreamingRequest(self.requestID)
                 self.callCompletionOnce(.failure(.noContent))
             }
         }
@@ -480,14 +511,17 @@ private class StreamingDelegate: NSObject, URLSessionDataDelegate {
         if let httpResponse = response as? HTTPURLResponse {
             if httpResponse.statusCode != 200 {
                 DispatchQueue.main.async {
-                    self.service?.isGenerating = false
-                    self.service?.currentTask = nil
-                    self.callCompletionOnce(.failure(.apiError("HTTP \(httpResponse.statusCode)")))
+                    guard let service = self.service else { return }
+                    let message = AIScriptService.extractErrorMessage(from: self.responseBuffer, statusCode: httpResponse.statusCode)
+                    guard service.failStreamingRequest(self.requestID) else { return }
+                    self.callCompletionOnce(.failure(.apiError(message)))
                 }
+                session.invalidateAndCancel()
                 completionHandler(.cancel)
                 return
             }
         }
         completionHandler(.allow)
     }
+
 }

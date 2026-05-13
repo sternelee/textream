@@ -10,8 +10,6 @@ import SwiftUI
 struct AIGenerateView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var service = TextreamService.shared
-    @State private var aiService = AIScriptService.shared
-
     @State private var selectedScenario: AIScenario = .keynoteSpeech
     @State private var userPrompt = ""
     @State private var generatedText = ""
@@ -44,6 +42,7 @@ struct AIGenerateView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .disabled(isGenerating)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -227,10 +226,10 @@ struct AIGenerateView: View {
                 Spacer()
 
                 if isGenerating {
-                    Button {
-                        aiService.stop()
-                        isGenerating = false
-                    } label: {
+                Button {
+                    AIScriptService.shared.stop()
+                    isGenerating = false
+                } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 11))
@@ -280,7 +279,7 @@ struct AIGenerateView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .disabled(userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || AIScriptService.shared.isGenerating)
                 }
             }
             .padding(12)
@@ -344,21 +343,26 @@ struct AIGenerateView: View {
             return
         }
 
+        let prompt = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         isGenerating = true
 
-        let existing = generatedText
+        // Keep auto-generation continuity aligned with the current continuation context.
+        NotchSettings.shared.lastAIScenario = selectedScenario
+        NotchSettings.shared.lastAIContext = prompt
+
+        let baseText = generatedText
         AIScriptService.shared.continueFrom(
-            existingText: existing,
+            existingText: baseText,
             scenario: selectedScenario,
-            userPrompt: userPrompt,
+            userPrompt: prompt,
             onUpdate: { text in
-                generatedText = existing + text
+                generatedText = baseText + text
             },
             onComplete: { result in
                 isGenerating = false
                 switch result {
                 case .success(let text):
-                    generatedText = existing + text
+                    generatedText = baseText + text
                 case .failure(let error):
                     generationError = error.localizedDescription
                     showError = true

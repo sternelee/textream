@@ -192,6 +192,7 @@ class TextreamService: NSObject, ObservableObject {
     private func startProgressMonitoring() {
         guard NotchSettings.shared.aiAutoGenerate,
               NotchSettings.shared.listeningMode == .wordTracking,
+              !NotchSettings.shared.directorModeEnabled,
               AIScriptService.shared.hasAPIKey else { return }
 
         hasTriggeredPreGenerate = false
@@ -208,6 +209,7 @@ class TextreamService: NSObject, ObservableObject {
         let settings = NotchSettings.shared
         guard settings.aiAutoGenerate,
               settings.listeningMode == .wordTracking,
+              !settings.directorModeEnabled,
               AIScriptService.shared.hasAPIKey,
               !hasTriggeredPreGenerate,
               preGeneratedText == nil,
