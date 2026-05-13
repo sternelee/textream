@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var dropAlertTitle: String = "Import Error"
     @State private var showSettings = false
     @State private var showAbout = false
+    @State private var showAIGenerate = false
     @FocusState private var isTextFocused: Bool
 
     private let defaultText = """
@@ -461,6 +462,20 @@ Happy presenting! [wave]
                     }
                     .buttonStyle(.plain)
 
+                    // AI Generate button
+                    Button {
+                        showAIGenerate = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("AI")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         showSettings = true
                     } label: {
@@ -482,6 +497,9 @@ Happy presenting! [wave]
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(settings: NotchSettings.shared)
+        }
+        .sheet(isPresented: $showAIGenerate) {
+            AIGenerateView()
         }
         .sheet(isPresented: $showAbout) {
             AboutView()
@@ -570,20 +588,55 @@ Happy presenting! [wave]
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    service.pages.append("")
-                    service.currentPageIndex = service.pages.count - 1
-                }
-            } label: {
-                Label("Add Page", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(spacing: 0) {
+                // AI pre-generation status
+                if !service.preGenerateStatus.isEmpty {
+                    HStack(spacing: 6) {
+                        if service.isPreGenerating {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.6)
+                        } else if service.preGeneratedText != nil {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.green)
+                        }
+                        Text(service.preGenerateStatus)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer()
+                        if service.preGeneratedText != nil {
+                            Button {
+                                service.clearPreGenerated()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor.opacity(0.06))
+                }
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        service.pages.append("")
+                        service.currentPageIndex = service.pages.count - 1
+                    }
+                } label: {
+                    Label("Add Page", systemImage: "plus")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 

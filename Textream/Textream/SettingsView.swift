@@ -284,7 +284,7 @@ struct NotchPreviewContent: View {
 // MARK: - Settings Tabs
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case appearance, guidance, teleprompter, external, browser, director
+    case appearance, guidance, teleprompter, external, browser, director, ai
 
     var id: String { rawValue }
 
@@ -296,6 +296,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .external:   return "External"
         case .browser:    return "Remote"
         case .director:   return "Director"
+        case .ai:         return "AI"
         }
     }
 
@@ -307,6 +308,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .external:   return "rectangle.on.rectangle"
         case .browser:    return "antenna.radiowaves.left.and.right"
         case .director:   return "megaphone"
+        case .ai:         return "wand.and.stars"
         }
     }
 }
@@ -376,6 +378,8 @@ struct SettingsView: View {
                     browserTab
                 case .director:
                     directorTab
+                case .ai:
+                    aiTab
                 }
 
                 Divider()
@@ -1287,6 +1291,221 @@ struct SettingsView: View {
         .onAppear { directorLocalIP = BrowserServer.localIPAddress() ?? "localhost" }
     }
 
+    // MARK: - AI Tab
+
+    @State private var isFetchingModels = false
+    @State private var fetchModelsError: String?
+    @State private var showFetchModelsError = false
+    @State private var fetchedModelCount = 0
+
+    private var aiTab: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Configure OpenAI-compatible API for AI script generation.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                // API Key
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("API Key")
+                        .font(.system(size: 13, weight: .medium))
+                    SecureField("sk-...", text: $settings.openAIAPIKey)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Your API key is stored locally on your Mac.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                // Base URL
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Base URL")
+                        .font(.system(size: 13, weight: .medium))
+                    TextField("https://api.openai.com/v1", text: $settings.openAIBaseURL)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Path should include /v1. Compatible with OpenAI, Azure, and other providers.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                // Model Selection
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Model")
+                            .font(.system(size: 13, weight: .medium))
+                        Spacer()
+                        Button {
+                            fetchRemoteModels()
+                        } label: {
+                            HStack(spacing: 3) {
+                                if isFetchingModels {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .scaleEffect(0.6)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 9, weight: .semibold))
+                                }
+                                Text(isFetchingModels ? "Fetching…" : "Fetch Models")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                        .disabled(settings.openAIAPIKey.isEmpty || isFetchingModels)
+                    }
+
+                    let models = AIScriptService.shared.availableModels
+                    Picker("", selection: $settings.openAIModel) {
+                        ForEach(models, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .labelsHidden()
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        if fetchedModelCount > 0 {
+                            Text("\(fetchedModelCount) models fetched from remote.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Click Fetch Models to load available models from your provider.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Divider()
+
+                // Auto-generate next page
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $settings.aiAutoGenerate) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Auto-Generate Next Page")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("AI automatically writes the next page when you're near the end of the current script. Only works in Word Tracking mode.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+
+                    if settings.aiAutoGenerate {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Trigger Threshold")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(Int(settings.aiAutoGenerateThreshold * 100))%")
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Slider(
+                                value: $settings.aiAutoGenerateThreshold,
+                                in: 0.5...0.95,
+                                step: 0.05
+                            )
+                            HStack {
+                                Text("Earlier (50%)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                                Spacer()
+                                Text("Later (95%)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.top, 4)
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                            Text("Great for language practice: AI continues the same topic seamlessly.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Divider()
+
+                // Test connection button
+                HStack {
+                    Spacer()
+                    Button {
+                        let service = AIScriptService.shared
+                        service.generate(
+                            scenario: .custom,
+                            userPrompt: "Say 'Hello from Textream!' and nothing else.",
+                            onUpdate: { _ in },
+                            onComplete: { result in
+                                switch result {
+                                case .success:
+                                    let alert = NSAlert()
+                                    alert.messageText = "Connection Successful"
+                                    alert.informativeText = "Your API configuration is working correctly."
+                                    alert.runModal()
+                                case .failure(let error):
+                                    let alert = NSAlert()
+                                    alert.messageText = "Connection Failed"
+                                    alert.informativeText = error.localizedDescription
+                                    alert.runModal()
+                                }
+                            }
+                        )
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Test Connection")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .disabled(settings.openAIAPIKey.isEmpty)
+                    Spacer()
+                }
+
+                Spacer()
+            }
+            .padding(16)
+        }
+        .alert("Fetch Models Failed", isPresented: $showFetchModelsError) {
+            Button("OK") { fetchModelsError = nil }
+        } message: {
+            Text(fetchModelsError ?? "An unknown error occurred.")
+        }
+    }
+
+    private func fetchRemoteModels() {
+        isFetchingModels = true
+        AIScriptService.shared.fetchModels { result in
+            isFetchingModels = false
+            switch result {
+            case .success(let models):
+                fetchedModelCount = models.count
+                // Ensure current selection is still valid
+                if !models.contains(settings.openAIModel) {
+                    settings.openAIModel = models.first ?? "gpt-4o-mini"
+                }
+            case .failure(let error):
+                fetchModelsError = error.localizedDescription
+                showFetchModelsError = true
+            }
+        }
+    }
+
     // MARK: - Shared Components
 
     private func displayPicker(
@@ -1405,6 +1624,13 @@ struct SettingsView: View {
         settings.browserServerPort = 7373
         settings.directorModeEnabled = false
         settings.directorServerPort = 7575
+        settings.openAIAPIKey = ""
+        settings.openAIModel = "gpt-4o-mini"
+        settings.openAIBaseURL = "https://api.openai.com/v1"
+        settings.aiAutoGenerate = false
+        settings.aiAutoGenerateThreshold = 0.8
+        settings.lastAIScenario = nil
+        settings.lastAIContext = ""
     }
 
     private func refreshScreens() {

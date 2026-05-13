@@ -49,7 +49,9 @@ class TextreamService: NSObject, ObservableObject {
             self?.externalDisplayController.dismiss()
             self?.browserServer.hideContent()
             self?.onOverlayDismissed?()
+            self?.stopProgressMonitoring()
         }
+        startProgressMonitoring()
         updatePageInfo()
 
         // Also show on external display if configured (same parsing as overlay)
@@ -87,6 +89,14 @@ class TextreamService: NSObject, ObservableObject {
             if !text.isEmpty { break }
             nextIndex += 1
         }
+
+        // If no next page with content, but we have pre-generated text, create it
+        if nextIndex >= pages.count, let preGen = preGeneratedText, !preGen.isEmpty {
+            pages.append(preGen)
+            nextIndex = pages.count - 1
+            clearPreGenerated()
+        }
+
         guard nextIndex < pages.count else { return }
         jumpToPage(index: nextIndex)
     }
@@ -111,6 +121,10 @@ class TextreamService: NSObject, ObservableObject {
         // Update content in-place without recreating the panel
         overlayController.updateContent(text: trimmed, hasNextPage: hasNextPage)
         updatePageInfo()
+
+        // Restart progress monitoring for the new page
+        clearPreGenerated()
+        startProgressMonitoring()
 
         // Also update external display content in-place
         let words = splitTextIntoWords(trimmed)
@@ -163,6 +177,108 @@ class TextreamService: NSObject, ObservableObject {
 
     @Published var currentFileURL: URL?
     @Published var savedPages: [String] = [""]
+
+    // MARK: - AI Auto-Generate
+
+    @Published var preGeneratedText: String?
+    @Published var isPreGenerating = false
+    @Published var preGenerateStatus: String = ""
+
+    private var progressMonitorTimer: Timer?
+    private var hasTriggeredPreGenerate = false
+
+    /// Start monitoring reading progress for auto-generation.
+    /// Only works in Word Tracking mode because we rely on recognizedCharCount.
+    private func startProgressMonitoring() {
+        guard NotchSettings.shared.aiAutoGenerate,
+              NotchSettings.shared.listeningMode == .wordTracking,
+              AIScriptService.shared.hasAPIKey else { return }
+
+        hasTriggeredPreGenerate = false
+        preGeneratedText = nil
+        preGenerateStatus = ""
+
+        progressMonitorTimer?.invalidate()
+        progressMonitorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.checkProgressForAutoGenerate()
+        }
+    }
+
+    private func checkProgressForAutoGenerate() {
+        let settings = NotchSettings.shared
+        guard settings.aiAutoGenerate,
+              settings.listeningMode == .wordTracking,
+              AIScriptService.shared.hasAPIKey,
+              !hasTriggeredPreGenerate,
+              preGeneratedText == nil,
+              !isPreGenerating else { return }
+
+        let recognizer = overlayController.speechRecognizer
+        let total = overlayController.overlayContent.totalCharCount
+        guard total > 0 else { return }
+
+        let progress = Double(recognizer.recognizedCharCount) / Double(total)
+        let threshold = settings.aiAutoGenerateThreshold
+
+        guard progress >= threshold else { return }
+
+        // Check if next page exists and is non-empty — if so, no need to pre-generate
+        var nextIndex = currentPageIndex + 1
+        while nextIndex < pages.count {
+            if !pages[nextIndex].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return // Next page already has content
+            }
+            nextIndex += 1
+        }
+
+        // Trigger pre-generation
+        hasTriggeredPreGenerate = true
+        triggerPreGenerate()
+    }
+
+    private func triggerPreGenerate() {
+        let settings = NotchSettings.shared
+        guard let scenario = settings.lastAIScenario,
+              !settings.lastAIContext.isEmpty else {
+            preGenerateStatus = "No AI context set. Generate a script via AI first."
+            return
+        }
+
+        let existingText = currentPageText
+        let context = settings.lastAIContext
+
+        isPreGenerating = true
+        preGenerateStatus = "AI is writing the next page…"
+
+        AIScriptService.shared.preGenerateNextPage(
+            scenario: scenario,
+            context: context,
+            existingText: existingText,
+            onComplete: { [weak self] result in
+                guard let self = self else { return }
+                self.isPreGenerating = false
+                switch result {
+                case .success(let text):
+                    self.preGeneratedText = text
+                    self.preGenerateStatus = "Next page ready ✓"
+                case .failure(let error):
+                    self.preGenerateStatus = "Pre-generation failed: \(error.localizedDescription)"
+                }
+            }
+        )
+    }
+
+    func stopProgressMonitoring() {
+        progressMonitorTimer?.invalidate()
+        progressMonitorTimer = nil
+        hasTriggeredPreGenerate = false
+    }
+
+    func clearPreGenerated() {
+        preGeneratedText = nil
+        preGenerateStatus = ""
+        hasTriggeredPreGenerate = false
+    }
 
     // MARK: - File Operations
 

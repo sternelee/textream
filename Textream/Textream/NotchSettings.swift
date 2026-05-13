@@ -449,6 +449,42 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(Int(directorServerPort), forKey: "directorServerPort") }
     }
 
+    // MARK: - AI Configuration
+
+    var openAIAPIKey: String {
+        didSet { UserDefaults.standard.set(openAIAPIKey, forKey: "openAIAPIKey") }
+    }
+
+    var openAIModel: String {
+        didSet { UserDefaults.standard.set(openAIModel, forKey: "openAIModel") }
+    }
+
+    var openAIBaseURL: String {
+        didSet { UserDefaults.standard.set(openAIBaseURL, forKey: "openAIBaseURL") }
+    }
+
+    // MARK: - AI Auto-Generate
+
+    var aiAutoGenerate: Bool {
+        didSet { UserDefaults.standard.set(aiAutoGenerate, forKey: "aiAutoGenerate") }
+    }
+
+    var aiAutoGenerateThreshold: Double {
+        didSet { UserDefaults.standard.set(aiAutoGenerateThreshold, forKey: "aiAutoGenerateThreshold") }
+    }
+
+    /// Stores the last AI scenario used for maintaining context continuity
+    var lastAIScenario: AIScenario? {
+        didSet {
+            UserDefaults.standard.set(lastAIScenario?.rawValue, forKey: "lastAIScenario")
+        }
+    }
+
+    /// Stores the last AI context prompt for maintaining context continuity
+    var lastAIContext: String {
+        didSet { UserDefaults.standard.set(lastAIContext, forKey: "lastAIContext") }
+    }
+
     var font: NSFont {
         fontFamilyPreset.font(size: fontSizePreset.pointSize)
     }
@@ -505,5 +541,18 @@ class NotchSettings {
         self.directorModeEnabled = UserDefaults.standard.object(forKey: "directorModeEnabled") as? Bool ?? false
         let savedDirectorPort = UserDefaults.standard.integer(forKey: "directorServerPort")
         self.directorServerPort = savedDirectorPort > 0 ? UInt16(savedDirectorPort) : 7575
+        self.openAIAPIKey = UserDefaults.standard.string(forKey: "openAIAPIKey") ?? ""
+        self.openAIModel = UserDefaults.standard.string(forKey: "openAIModel") ?? "gpt-4o-mini"
+        self.openAIBaseURL = UserDefaults.standard.string(forKey: "openAIBaseURL") ?? "https://api.openai.com/v1"
+        self.aiAutoGenerate = UserDefaults.standard.object(forKey: "aiAutoGenerate") as? Bool ?? false
+        let savedThreshold = UserDefaults.standard.double(forKey: "aiAutoGenerateThreshold")
+        self.aiAutoGenerateThreshold = savedThreshold > 0 ? savedThreshold : 0.8
+        if let savedScenario = UserDefaults.standard.string(forKey: "lastAIScenario"),
+           let scenario = AIScenario(rawValue: savedScenario) {
+            self.lastAIScenario = scenario
+        } else {
+            self.lastAIScenario = nil
+        }
+        self.lastAIContext = UserDefaults.standard.string(forKey: "lastAIContext") ?? ""
     }
 }
