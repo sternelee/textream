@@ -11,19 +11,32 @@
 		88AA00112F37E47300AF141F /* TextreamiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TextreamiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		88AA00312F37E47300AF141F /* Exceptions for "TextreamiOS" folder in "TextreamiOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 88AA00152F37E47300AF141F /* TextreamiOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		446966B62F37E47300AF141F /* Textream */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Textream;
 			sourceTree = "<group>";
 		};
-		88AA00122F37E47300AF141F /* Core */ = {
+		88AA00122F37E47300AF141F /* Textream/Core */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Textream/Core;
 			sourceTree = "<group>";
 		};
 		88AA00132F37E47300AF141F /* TextreamiOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				88AA00312F37E47300AF141F /* Exceptions for "TextreamiOS" folder in "TextreamiOS" target */,
+			);
 			path = TextreamiOS;
 			sourceTree = "<group>";
 		};
@@ -51,7 +64,7 @@
 			isa = PBXGroup;
 			children = (
 				446966B62F37E47300AF141F /* Textream */,
-				88AA00122F37E47300AF141F /* Core */,
+				88AA00122F37E47300AF141F /* Textream/Core */,
 				88AA00132F37E47300AF141F /* TextreamiOS */,
 				446966B52F37E47300AF141F /* Products */,
 			);
@@ -104,7 +117,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				88AA00122F37E47300AF141F /* Core */,
+				88AA00122F37E47300AF141F /* Textream/Core */,
 				88AA00132F37E47300AF141F /* TextreamiOS */,
 			);
 			name = TextreamiOS;
@@ -319,7 +332,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = RJA7656U34;
+				DEVELOPMENT_TEAM = UJ8NW4N779;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -336,7 +349,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.5.2;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.fka.textream;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.leeapp.textream;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -392,8 +405,9 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = RJA7656U34;
+				DEVELOPMENT_TEAM = UJ8NW4N779;
 				ENABLE_PREVIEWS = YES;
+				GENERATE_APP_INTENTS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TextreamiOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Textream iOS";
@@ -405,7 +419,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.5.2;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.fka.textream.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.leeapp.textream.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -424,8 +438,9 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = RJA7656U34;
+				DEVELOPMENT_TEAM = UJ8NW4N779;
 				ENABLE_PREVIEWS = YES;
+				GENERATE_APP_INTENTS = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TextreamiOS/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Textream iOS";
@@ -437,7 +452,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.5.2;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.fka.textream.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.leeapp.textream.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

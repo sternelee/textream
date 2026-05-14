@@ -9,15 +9,23 @@ final class IOSWordTrackingRecognizer {
     var audioLevels: [Double] = Array(repeating: 0, count: 24)
     var lastSpokenText: String = ""
     var errorMessage: String?
+    var microphonePermissionDenied = false
+    var speechPermissionDenied = false
+    var currentLocaleIdentifier: String = Locale.current.identifier
 
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var audioEngine = AVAudioEngine()
     private var matcher = SpeechProgressMatcher()
+    private var isStopping = false
+    private var processedTranscript: String = ""
 
     func start(with text: String, localeIdentifier: String = Locale.current.identifier, preservingCharCount: Int? = nil) {
         stop()
+        currentLocaleIdentifier = localeIdentifier
+        microphonePermissionDenied = false
+        speechPermissionDenied = false
         if let preservingCharCount {
             matcher.updateText(text, preservingCharCount: preservingCharCount)
             recognizedCharCount = matcher.recognizedCharCount
@@ -26,12 +34,14 @@ final class IOSWordTrackingRecognizer {
             recognizedCharCount = 0
         }
         lastSpokenText = ""
+        processedTranscript = ""
         errorMessage = nil
 
         requestPermissionsAndBegin(localeIdentifier: localeIdentifier)
     }
 
     func stop() {
+        isStopping = true
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest?.endAudio()
@@ -41,6 +51,7 @@ final class IOSWordTrackingRecognizer {
         }
         audioEngine.inputNode.removeTap(onBus: 0)
         isListening = false
+        processedTranscript = ""
         audioLevels = Array(repeating: 0, count: 24)
     }
 
@@ -56,19 +67,20 @@ final class IOSWordTrackingRecognizer {
     }
 
     private func requestPermissionsAndBegin(localeIdentifier: String) {
-        let audioSession = AVAudioSession.sharedInstance()
-        switch audioSession.recordPermission {
+        switch AVAudioApplication.shared.recordPermission {
         case .granted:
             requestSpeechAuthorizationAndBegin(localeIdentifier: localeIdentifier)
         case .denied:
-            errorMessage = "Microphone permission is denied."
+            microphonePermissionDenied = true
+            errorMessage = "Microphone permission is denied. Enable it in Settings to use Word Tracking."
         case .undetermined:
-            audioSession.requestRecordPermission { [weak self] granted in
+            AVAudioApplication.requestRecordPermission { [weak self] granted in
                 DispatchQueue.main.async {
                     guard let self else { return }
                     if granted {
                         self.requestSpeechAuthorizationAndBegin(localeIdentifier: localeIdentifier)
                     } else {
+                        self.microphonePermissionDenied = true
                         self.errorMessage = "Microphone permission is required for Word Tracking."
                     }
                 }
@@ -85,19 +97,30 @@ final class IOSWordTrackingRecognizer {
                 switch status {
                 case .authorized:
                     self.beginRecognition(localeIdentifier: localeIdentifier)
-                default:
+                case .denied, .restricted:
+                    self.speechPermissionDenied = true
                     self.errorMessage = "Speech recognition permission is required for Word Tracking."
+                case .notDetermined:
+                    self.errorMessage = "Speech recognition permission is still pending. Try again in a moment."
+                @unknown default:
+                    self.errorMessage = "Speech recognition permission is unavailable."
                 }
             }
         }
     }
 
     private func beginRecognition(localeIdentifier: String) {
+        isStopping = false
         audioEngine = AVAudioEngine()
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
 
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
-            errorMessage = "Speech recognizer is unavailable."
+        guard let speechRecognizer else {
+            errorMessage = "Speech recognition for \(localeIdentifier) is unavailable on this device."
+            return
+        }
+
+        guard speechRecognizer.isAvailable else {
+            errorMessage = "Speech recognizer is temporarily unavailable for \(localeIdentifier)."
             return
         }
 
@@ -107,7 +130,7 @@ final class IOSWordTrackingRecognizer {
 
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true, options: [])
         } catch {
             errorMessage = "Failed to configure speech audio session: \(error.localizedDescription)"
@@ -135,12 +158,28 @@ final class IOSWordTrackingRecognizer {
                 let spoken = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
                     self.lastSpokenText = spoken
-                    self.recognizedCharCount = self.matcher.consume(spoken: spoken)
+                    guard spoken != self.processedTranscript else { return }
+
+                    let incrementalTranscript: String
+                    if self.processedTranscript.isEmpty {
+                        incrementalTranscript = spoken
+                    } else if spoken.hasPrefix(self.processedTranscript) {
+                        incrementalTranscript = String(spoken.dropFirst(self.processedTranscript.count))
+                    } else {
+                        self.matcher.prepareForRestart()
+                        incrementalTranscript = spoken
+                    }
+
+                    if !incrementalTranscript.isEmpty {
+                        self.recognizedCharCount = self.matcher.consume(spoken: incrementalTranscript)
+                    }
+                    self.processedTranscript = spoken
                 }
             }
 
             if let error {
                 DispatchQueue.main.async {
+                    if self.isStopping { return }
                     self.errorMessage = error.localizedDescription
                     self.isListening = false
                 }
@@ -151,6 +190,7 @@ final class IOSWordTrackingRecognizer {
             audioEngine.prepare()
             try audioEngine.start()
             isListening = true
+            errorMessage = nil
         } catch {
             errorMessage = "Failed to start speech audio engine: \(error.localizedDescription)"
             isListening = false

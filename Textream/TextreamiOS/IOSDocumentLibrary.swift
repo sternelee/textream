@@ -4,6 +4,11 @@ struct SavedScriptDocument: Identifiable, Hashable {
     let url: URL
     let title: String
     let modifiedAt: Date
+    let pageCount: Int
+    let wordCount: Int
+    let lastReadPageIndex: Int?
+    let lastReadWordIndex: Int?
+    let tags: [String]
 
     var id: URL { url }
 }
@@ -34,10 +39,20 @@ final class IOSDocumentLibrary {
                 .filter { $0.pathExtension.lowercased() == "textream" }
                 .map { url in
                     let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+                    let loaded = try? ScriptDocumentStore.load(from: url)
+                    let pageCount = loaded?.pages.count ?? 0
+                    let wordCount = loaded?.pages.reduce(into: 0, { partialResult, page in
+                        partialResult += TextSegmentation.splitIntoWords(page).count
+                    }) ?? 0
                     return SavedScriptDocument(
                         url: url,
                         title: url.deletingPathExtension().lastPathComponent,
-                        modifiedAt: values.contentModificationDate ?? .distantPast
+                        modifiedAt: values.contentModificationDate ?? .distantPast,
+                        pageCount: pageCount,
+                        wordCount: wordCount,
+                        lastReadPageIndex: loaded?.lastReadPageIndex,
+                        lastReadWordIndex: loaded?.lastReadWordIndex,
+                        tags: loaded?.tags ?? []
                     )
                 }
                 .sorted { $0.modifiedAt > $1.modifiedAt }

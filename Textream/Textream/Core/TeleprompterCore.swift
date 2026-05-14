@@ -24,18 +24,49 @@ struct ScriptDocument: Codable, Equatable {
     var pages: [String]
     var currentPageIndex: Int
     var readPages: Set<Int>
+    var lastReadPageIndex: Int
+    var lastReadWordIndex: Int
+    var tags: [String]
+    var bookmarkPageIndex: Int
+    var bookmarkWordIndex: Int
 
     init(
         title: String = "Untitled",
         pages: [String] = [""],
         currentPageIndex: Int = 0,
-        readPages: Set<Int> = []
+        readPages: Set<Int> = [],
+        lastReadPageIndex: Int = -1,
+        lastReadWordIndex: Int = -1,
+        tags: [String] = [],
+        bookmarkPageIndex: Int = -1,
+        bookmarkWordIndex: Int = -1
     ) {
         let normalizedPages = pages.isEmpty ? [""] : pages
         self.title = title
         self.pages = normalizedPages
         self.currentPageIndex = min(max(0, currentPageIndex), normalizedPages.count - 1)
         self.readPages = readPages.filter { $0 >= 0 && $0 < normalizedPages.count }
+        self.lastReadPageIndex = lastReadPageIndex
+        self.lastReadWordIndex = lastReadWordIndex
+        self.tags = tags
+        self.bookmarkPageIndex = bookmarkPageIndex
+        self.bookmarkWordIndex = bookmarkWordIndex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        pages = try container.decode([String].self, forKey: .pages)
+        currentPageIndex = try container.decode(Int.self, forKey: .currentPageIndex)
+        readPages = try container.decode(Set<Int>.self, forKey: .readPages)
+        lastReadPageIndex = try container.decodeIfPresent(Int.self, forKey: .lastReadPageIndex) ?? -1
+        lastReadWordIndex = try container.decodeIfPresent(Int.self, forKey: .lastReadWordIndex) ?? -1
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        bookmarkPageIndex = try container.decodeIfPresent(Int.self, forKey: .bookmarkPageIndex) ?? -1
+        bookmarkWordIndex = try container.decodeIfPresent(Int.self, forKey: .bookmarkWordIndex) ?? -1
+        if pages.isEmpty { pages = [""] }
+        currentPageIndex = min(max(0, currentPageIndex), pages.count - 1)
+        readPages = readPages.filter { $0 >= 0 && $0 < pages.count }
     }
 
     var currentPageText: String {
@@ -104,6 +135,36 @@ struct ScriptDocument: Codable, Equatable {
         return true
     }
 
+    mutating func movePage(from sourceIndex: Int, to destinationIndex: Int) {
+        guard pages.indices.contains(sourceIndex),
+              pages.indices.contains(destinationIndex),
+              sourceIndex != destinationIndex else { return }
+        pages.swapAt(sourceIndex, destinationIndex)
+
+        let wasSourceRead = readPages.contains(sourceIndex)
+        let wasDestRead = readPages.contains(destinationIndex)
+        readPages.remove(sourceIndex)
+        readPages.remove(destinationIndex)
+        if wasSourceRead { readPages.insert(destinationIndex) }
+        if wasDestRead { readPages.insert(sourceIndex) }
+
+        if currentPageIndex == sourceIndex {
+            currentPageIndex = destinationIndex
+        } else if currentPageIndex == destinationIndex {
+            currentPageIndex = sourceIndex
+        }
+    }
+
+    mutating func moveCurrentPageUp() {
+        guard currentPageIndex > 0 else { return }
+        movePage(from: currentPageIndex, to: currentPageIndex - 1)
+    }
+
+    mutating func moveCurrentPageDown() {
+        guard currentPageIndex + 1 < pages.count else { return }
+        movePage(from: currentPageIndex, to: currentPageIndex + 1)
+    }
+
     mutating func markPageRead(_ index: Int) {
         guard pages.indices.contains(index) else { return }
         readPages.insert(index)
@@ -111,6 +172,19 @@ struct ScriptDocument: Codable, Equatable {
 
     mutating func markCurrentPageRead() {
         markPageRead(currentPageIndex)
+    }
+
+    @discardableResult
+    mutating func duplicateCurrentPage() -> Int {
+        guard pages.indices.contains(currentPageIndex) else { return currentPageIndex }
+        let text = pages[currentPageIndex]
+        let insertIndex = currentPageIndex + 1
+        pages.insert(text, at: insertIndex)
+        readPages = Set(readPages.map { existing in
+            existing >= insertIndex ? existing + 1 : existing
+        })
+        currentPageIndex = insertIndex
+        return insertIndex
     }
 
     func pagePreview(at index: Int, wordLimit: Int = 5, characterLimit: Int = 30) -> String {
