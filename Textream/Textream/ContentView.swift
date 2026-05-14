@@ -187,9 +187,25 @@ Happy presenting! [wave]
     }
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                HighlightingTextEditor(
+        HStack(spacing: 0) {
+            // Paragraph outline sidebar
+            if !currentText.wrappedValue.isEmpty {
+                ScriptOutlineView(
+                    text: currentText.wrappedValue,
+                    currentCharOffset: editorCaretPosition,
+                    onJump: { offset in
+                        dictationCaretPosition = offset
+                    }
+                )
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .padding(.top, 8)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            
+            VStack(spacing: 0) {
+                ZStack {
+                    HighlightingTextEditor(
                     text: currentText,
                     font: .systemFont(ofSize: 16, weight: .regular).rounded,
                     highlightRange: dictationHighlightRange,
@@ -332,6 +348,7 @@ Happy presenting! [wave]
             }
         }
     }
+}
 
     private var directorOverlay: some View {
         VStack(spacing: 20) {
