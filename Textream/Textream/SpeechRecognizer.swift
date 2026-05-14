@@ -700,6 +700,8 @@ class SpeechRecognizer {
     }
 
     private static func isAnnotationWord(_ word: String) -> Bool {
+        // Include markup tags as annotations so speech recognition skips them
+        if ScriptMarkupParser.tag(for: word) != nil { return true }
         if word.hasPrefix("[") && word.hasSuffix("]") { return true }
         let stripped = word.filter { $0.isLetter || $0.isNumber }
         return stripped.isEmpty

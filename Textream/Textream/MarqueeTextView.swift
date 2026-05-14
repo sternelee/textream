@@ -63,6 +63,7 @@ struct WordItem: Identifiable {
     let word: String
     let charOffset: Int // char offset of this word in the full text (counting spaces)
     let isAnnotation: Bool // true for [bracket] words and emoji-only words
+    var style: WordStyle = WordStyle()
 }
 
 // MARK: - Preference key to report word Y positions
@@ -428,21 +429,101 @@ struct WordFlowLayout: View {
         let isFullyLit = litCount >= letterCount
         let isCurrentWord = isNextWord || (charsIntoWord >= 0 && !isFullyLit)
 
+        // Resolve display text: strip **bold** wrappers, convert tags to symbols
+        let displayText = ScriptMarkupParser.displayText(for: item.word)
+        let isMarkupTag = ScriptMarkupParser.tag(for: item.word) != nil
+        let isRegionTag = ScriptMarkupParser.tag(for: item.word)?.isRegionMarker ?? false
+
+        // Rhythm background for region-affected words
+        let rhythmBg: Color = item.style.rhythmHint?.overlayBackground ?? Color.clear
+
         // When highlighting is off (classic/silence-paused), use uniform color
         if !highlightWords {
-            let uniformColor: Color = item.isAnnotation
-                ? cueColor.opacity(cueUnreadOpacity)
-                : highlightColor
+            let uniformColor: Color
+            if isMarkupTag && !isRegionTag {
+                uniformColor = cueColor.opacity(0.5)
+            } else if item.isAnnotation {
+                uniformColor = cueColor.opacity(cueUnreadOpacity)
+            } else {
+                uniformColor = highlightColor
+            }
 
-            return Text(item.word + " ")
-                .font(item.isAnnotation ? Font(font).italic() : Font(font))
+            let textFont: Font
+            if item.style.isBold || item.style.isEmphasis {
+                textFont = Font(font).bold()
+            } else if item.isAnnotation || isMarkupTag {
+                textFont = Font(font).italic()
+            } else {
+                textFont = Font(font)
+            }
+
+            return Text(displayText + " ")
+                .font(textFont)
                 .foregroundStyle(uniformColor)
                 .background(
-                    GeometryReader { wordGeo in
-                        Color.clear.preference(
-                            key: WordYPreferenceKey.self,
-                            value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
-                        )
+                    ZStack {
+                        rhythmBg
+                        GeometryReader { wordGeo in
+                            Color.clear.preference(
+                                key: WordYPreferenceKey.self,
+                                value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
+                            )
+                        }
+                    }
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onWordTap?(item.charOffset)
+                }
+        }
+
+        // Region markers ([slow], [fast], [normal]) — render as invisible spacers
+        if isRegionTag {
+            return Text(" ")
+                .font(Font(font))
+                .foregroundStyle(Color.clear)
+                .background(
+                    ZStack {
+                        rhythmBg
+                        GeometryReader { wordGeo in
+                            Color.clear.preference(
+                                key: WordYPreferenceKey.self,
+                                value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
+                            )
+                        }
+                    }
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onWordTap?(item.charOffset)
+                }
+        }
+
+        // Markup tags ([pause], [emphasis]) — special visual rendering
+        if isMarkupTag && !isRegionTag {
+            let tagColor: Color
+            if item.style.isPauseMarker {
+                tagColor = cueColor.opacity(0.35)
+            } else if item.style.isEmphasis {
+                tagColor = Color.yellow.opacity(0.7)
+            } else {
+                tagColor = cueColor.opacity(0.5)
+            }
+
+            let textFont: Font = item.style.isEmphasis ? Font(font).bold() : Font(font).italic()
+
+            return Text(displayText + "  ")
+                .font(textFont)
+                .foregroundStyle(tagColor)
+                .background(
+                    ZStack {
+                        rhythmBg
+                        GeometryReader { wordGeo in
+                            Color.clear.preference(
+                                key: WordYPreferenceKey.self,
+                                value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
+                            )
+                        }
                     }
                 )
                 .contentShape(Rectangle())
@@ -457,15 +538,18 @@ struct WordFlowLayout: View {
                 ? cueColor.opacity(cueReadOpacity)
                 : cueColor.opacity(cueUnreadOpacity)
 
-            return Text(item.word + " ")
+            return Text(displayText + " ")
                 .font(Font(font).italic())
                 .foregroundStyle(annotationColor)
                 .background(
-                    GeometryReader { wordGeo in
-                        Color.clear.preference(
-                            key: WordYPreferenceKey.self,
-                            value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
-                        )
+                    ZStack {
+                        rhythmBg
+                        GeometryReader { wordGeo in
+                            Color.clear.preference(
+                                key: WordYPreferenceKey.self,
+                                value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
+                            )
+                        }
                     }
                 )
                 .contentShape(Rectangle())
@@ -482,16 +566,29 @@ struct WordFlowLayout: View {
         // Base color for the whole word
         let wordColor: Color = isFullyLit ? highlightColor.opacity(0.3) : dimColor
 
-        return Text(item.word + " ")
-            .font(Font(font))
-            .foregroundStyle(wordColor)
-            .underline(isCurrentWord, color: wordColor)
+        // Bold words get extra emphasis
+        let textFont: Font = item.style.isBold ? Font(font).bold() : Font(font)
+        let effectiveColor: Color = item.style.isBold && !isFullyLit
+            ? highlightColor.opacity(isCurrentWord ? 0.85 : 1.0)
+            : wordColor
+        let underlineColor: Color = item.style.isEmphasis
+            ? Color.yellow.opacity(0.8)
+            : effectiveColor
+        let shouldUnderline = isCurrentWord || item.style.isEmphasis
+
+        return Text(displayText + " ")
+            .font(textFont)
+            .foregroundStyle(effectiveColor)
+            .underline(shouldUnderline, color: underlineColor)
             .background(
-                GeometryReader { wordGeo in
-                    Color.clear.preference(
-                        key: WordYPreferenceKey.self,
-                        value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
-                    )
+                ZStack {
+                    rhythmBg
+                    GeometryReader { wordGeo in
+                        Color.clear.preference(
+                            key: WordYPreferenceKey.self,
+                            value: [item.id: wordGeo.frame(in: .named("flowLayout")).midY]
+                        )
+                    }
                 }
             )
             .contentShape(Rectangle())
@@ -503,15 +600,40 @@ struct WordFlowLayout: View {
     private func buildItems() -> [WordItem] {
         var items: [WordItem] = []
         var offset = 0
+        var currentRhythm: RhythmHint?
         for (i, word) in words.enumerated() {
+            // Region markers ([slow], [fast], [normal]) update rhythm state
+            if let tag = ScriptMarkupParser.tag(for: word), tag.isRegionMarker {
+                switch tag {
+                case .slow:  currentRhythm = .slow
+                case .fast:  currentRhythm = .fast
+                case .normal: currentRhythm = nil
+                default: break
+                }
+            }
             let isAnnotation = Self.isAnnotationWord(word)
-            items.append(WordItem(id: i, word: word, charOffset: offset, isAnnotation: isAnnotation))
+            var style = WordStyle()
+            style.rhythmHint = currentRhythm
+            if let tag = ScriptMarkupParser.tag(for: word) {
+                switch tag {
+                case .pause:    style.isPauseMarker = true
+                case .emphasis: style.isEmphasis = true
+                default: break
+                }
+            }
+            // Detect **bold** wrapper
+            if ScriptMarkupParser.boldText(from: word) != nil {
+                style.isBold = true
+            }
+            items.append(WordItem(id: i, word: word, charOffset: offset, isAnnotation: isAnnotation, style: style))
             offset += word.count + 1 // +1 for space
         }
         return items
     }
 
     static func isAnnotationWord(_ word: String) -> Bool {
+        // Exclude markup tags (they have their own rendering)
+        if ScriptMarkupParser.tag(for: word) != nil { return false }
         // Words inside square brackets like [smile]
         if word.hasPrefix("[") && word.hasSuffix("]") { return true }
         // Emoji-only words (no letters or numbers)
