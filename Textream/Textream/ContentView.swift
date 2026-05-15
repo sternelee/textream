@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var editorCaretPosition: Int = 0
     @State private var selectedText: String = ""
     @State private var showPolish = false
+    @State private var showHistory = false
     @State private var isDroppingPresentation = false
     @State private var dropError: String?
     @State private var dropAlertTitle: String = "Import Error"
@@ -526,7 +527,20 @@ Happy presenting! [wave]
                         .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .disabled(service.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    // History button
+                    Button {
+                        showHistory = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("History")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
 
                     Button {
                         showSettings = true
@@ -571,6 +585,9 @@ Happy presenting! [wave]
         }
         .sheet(isPresented: $showPractice) {
             PracticeView(scriptText: service.currentPageText)
+        }
+        .sheet(isPresented: $showHistory) {
+            PracticeHistoryView()
         }
         .sheet(isPresented: $showAbout) {
             AboutView()
