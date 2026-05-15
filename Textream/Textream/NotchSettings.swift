@@ -281,6 +281,36 @@ enum MirrorAxis: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Phonetic Source
+
+enum PhoneticSource: String, CaseIterable, Identifiable {
+    case appleNative
+    case aiGenerated
+    
+    var id: String { rawValue }
+    
+    var label: String {
+        switch self {
+        case .appleNative:  return "Apple Native"
+        case .aiGenerated:  return "AI Generated"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .appleNative:  return "Use macOS Translation framework for phonetic hints."
+        case .aiGenerated:  return "Use OpenAI to generate phonetic spellings."
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .appleNative:  return "apple.logo"
+        case .aiGenerated:  return "sparkles"
+        }
+    }
+}
+
 // MARK: - Listening Mode
 
 enum ListeningMode: String, CaseIterable, Identifiable {
@@ -485,6 +515,24 @@ class NotchSettings {
         didSet { UserDefaults.standard.set(lastAIContext, forKey: "lastAIContext") }
     }
 
+    // MARK: - Phonetic Tooltip Configuration
+
+    var nativeLanguage: String {
+        didSet { UserDefaults.standard.set(nativeLanguage, forKey: "nativeLanguage") }
+    }
+
+    var pauseThreshold: Double {
+        didSet { UserDefaults.standard.set(pauseThreshold, forKey: "pauseThreshold") }
+    }
+
+    var phoneticSource: PhoneticSource {
+        didSet { UserDefaults.standard.set(phoneticSource.rawValue, forKey: "phoneticSource") }
+    }
+
+    var phoneticTooltipEnabled: Bool {
+        didSet { UserDefaults.standard.set(phoneticTooltipEnabled, forKey: "phoneticTooltipEnabled") }
+    }
+
     var font: NSFont {
         fontFamilyPreset.font(size: fontSizePreset.pointSize)
     }
@@ -554,5 +602,10 @@ class NotchSettings {
             self.lastAIScenario = nil
         }
         self.lastAIContext = UserDefaults.standard.string(forKey: "lastAIContext") ?? ""
+        self.nativeLanguage = UserDefaults.standard.string(forKey: "nativeLanguage") ?? Locale.current.language.languageCode?.identifier ?? "en"
+        let savedPauseThreshold = UserDefaults.standard.double(forKey: "pauseThreshold")
+        self.pauseThreshold = savedPauseThreshold > 0 ? savedPauseThreshold : 1.5
+        self.phoneticSource = PhoneticSource(rawValue: UserDefaults.standard.string(forKey: "phoneticSource") ?? "") ?? .aiGenerated
+        self.phoneticTooltipEnabled = UserDefaults.standard.object(forKey: "phoneticTooltipEnabled") as? Bool ?? false
     }
 }
