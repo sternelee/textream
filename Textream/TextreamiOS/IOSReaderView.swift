@@ -407,8 +407,6 @@ struct IOSReaderView: View {
             }
             .padding(16)
 
-            globalProgressThumb
-
             if model.reachedEndOfScript {
                 endOfScriptOverlay
             }
@@ -547,28 +545,6 @@ struct IOSReaderView: View {
                 startHideControlsTimer()
             }
         }
-    }
-
-    private var globalProgressThumb: some View {
-        let totalPages = max(model.document.pages.count, 1)
-        let currentPage = model.document.currentPageIndex
-        let wordProgressInPage = model.currentWords.isEmpty ? 0 : Double(model.currentWordIndex) / Double(model.currentWords.count)
-        let overallProgress = (Double(currentPage) + wordProgressInPage) / Double(totalPages)
-        return GeometryReader { geo in
-            ZStack(alignment: .top) {
-                Capsule()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(width: 3)
-                Capsule()
-                    .fill(model.highlightColorPreset.tint)
-                    .frame(width: 3, height: max(4, geo.size.height * CGFloat(overallProgress)))
-            }
-            .frame(width: 3)
-            .frame(maxHeight: .infinity, alignment: .top)
-        }
-        .frame(width: 3)
-        .padding(.trailing, 4)
-        .allowsHitTesting(false)
     }
 
     private var topFadeGradient: some View {
@@ -904,112 +880,115 @@ struct IOSReaderView: View {
     private var quickSettingsOverlay: some View {
         VStack {
             if showQuickSettings {
-                VStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Speed: \(String(format: "%.1f", model.scrollSpeedWordsPerSecond)) w/s")
+                                    .font(.caption.weight(.semibold))
+                                Spacer()
+                                HStack(spacing: 0) {
+                                    Button {
+                                        model.scrollSpeedWordsPerSecond = max(0.5, model.scrollSpeedWordsPerSecond - 0.1)
+                                    } label: {
+                                        Image(systemName: "minus")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 28, height: 28)
+                                            .background(Color.white.opacity(0.12))
+                                    }
+                                    .buttonStyle(.plain)
+                                    Button {
+                                        model.scrollSpeedWordsPerSecond = min(6.0, model.scrollSpeedWordsPerSecond + 0.1)
+                                    } label: {
+                                        Image(systemName: "plus")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 28, height: 28)
+                                            .background(Color.white.opacity(0.12))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            Slider(value: $model.scrollSpeedWordsPerSecond, in: 0.5...6.0, step: 0.1)
+                                .tint(model.highlightColorPreset.tint)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Size: \(Int(model.readerFontSize)) pt")
+                                .font(.caption.weight(.semibold))
+                            Slider(value: $model.readerFontSize, in: 24...64, step: 1)
+                                .tint(model.highlightColorPreset.tint)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Spacing: \(String(format: "%.1f", model.readerLineSpacing))x")
+                                .font(.caption.weight(.semibold))
+                            Slider(value: $model.readerLineSpacing, in: 0.8...2.5, step: 0.1)
+                                .tint(model.highlightColorPreset.tint)
+                        }
                         HStack {
-                            Text("Speed: \(String(format: "%.1f", model.scrollSpeedWordsPerSecond)) w/s")
+                            Text("Mirror mode")
                                 .font(.caption.weight(.semibold))
                             Spacer()
-                            HStack(spacing: 0) {
-                                Button {
-                                    model.scrollSpeedWordsPerSecond = max(0.5, model.scrollSpeedWordsPerSecond - 0.1)
-                                } label: {
-                                    Image(systemName: "minus")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 28, height: 28)
-                                        .background(Color.white.opacity(0.12))
-                                }
-                                .buttonStyle(.plain)
-                                Button {
-                                    model.scrollSpeedWordsPerSecond = min(6.0, model.scrollSpeedWordsPerSecond + 0.1)
-                                } label: {
-                                    Image(systemName: "plus")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 28, height: 28)
-                                        .background(Color.white.opacity(0.12))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            Toggle("", isOn: $model.mirrorModeEnabled)
+                                .toggleStyle(.switch)
+                                .scaleEffect(0.8)
                         }
-                        Slider(value: $model.scrollSpeedWordsPerSecond, in: 0.5...6.0, step: 0.1)
-                            .tint(model.highlightColorPreset.tint)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Size: \(Int(model.readerFontSize)) pt")
-                            .font(.caption.weight(.semibold))
-                        Slider(value: $model.readerFontSize, in: 24...64, step: 1)
-                            .tint(model.highlightColorPreset.tint)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Spacing: \(String(format: "%.1f", model.readerLineSpacing))x")
-                            .font(.caption.weight(.semibold))
-                        Slider(value: $model.readerLineSpacing, in: 0.8...2.5, step: 0.1)
-                            .tint(model.highlightColorPreset.tint)
-                    }
-                    HStack {
-                        Text("Mirror mode")
-                            .font(.caption.weight(.semibold))
-                        Spacer()
-                        Toggle("", isOn: $model.mirrorModeEnabled)
-                            .toggleStyle(.switch)
-                            .scaleEffect(0.8)
-                    }
-                    Button {
-                        withAnimation(.spring()) {
-                            fullImmersion = true
-                            if !hasShownFullImmersionHint {
-                                showFullImmersionHint = true
-                                hasShownFullImmersionHint = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                                    withAnimation { showFullImmersionHint = false }
+                        Button {
+                            withAnimation(.spring()) {
+                                fullImmersion = true
+                                if !hasShownFullImmersionHint {
+                                    showFullImmersionHint = true
+                                    hasShownFullImmersionHint = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                        withAnimation { showFullImmersionHint = false }
+                                    }
                                 }
                             }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            Text("Full Screen")
-                                .font(.caption.weight(.bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    Button {
-                        showingPractice = true
-                        withAnimation(.spring()) { showQuickSettings = false }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "mic")
-                            Text("Practice")
-                                .font(.caption.weight(.bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    Button {
-                        withAnimation(.spring()) { showQuickSettings = false }
-                    } label: {
-                        Text("Done")
-                            .font(.caption.weight(.bold))
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                Text("Full Screen")
+                                    .font(.caption.weight(.bold))
+                            }
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .background(model.highlightColorPreset.tint)
+                            .background(Color.white.opacity(0.12))
                             .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            showingPractice = true
+                            withAnimation(.spring()) { showQuickSettings = false }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "mic")
+                                Text("Practice")
+                                    .font(.caption.weight(.bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            withAnimation(.spring()) { showQuickSettings = false }
+                        } label: {
+                            Text("Done")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 6)
+                                .background(model.highlightColorPreset.tint)
+                                .clipShape(Capsule())
+                        }
                     }
+                    .padding(14)
                 }
-                .padding(14)
+                .frame(maxHeight: min(520, UIScreen.main.bounds.height * 0.65))
                 .frame(width: 220)
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
