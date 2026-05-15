@@ -140,8 +140,10 @@ class SpeechRecognizer {
     /// Sliding window of recent match positions for confidence gating.
     /// We require 2-of-3 recent results to agree before committing a forward jump.
     private var recentMatchPositions: [Int] = []
-    /// Guard against recursive restarts caused by cancel → error → restartTask loops
-    private var isRestartingTask = false
+    /// Monotonically increasing ID for each recognition task. Stale error callbacks
+    /// from cancelled tasks check this and bail out, preventing cancel → error →
+    /// restartTask infinite loops that freeze the main thread.
+    private var taskGeneration: UInt64 = 0
 
     /// Update the source text while preserving the current recognized char count.
     /// Used by Director Mode to live-edit unread text without resetting read progress.
@@ -428,13 +430,15 @@ class SpeechRecognizer {
         }
 
         let currentGeneration = sessionGeneration
+        let thisTaskGen = taskGeneration
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self else { return }
             if let result {
                 let spoken = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
-                    // Ignore stale results from a previous session
-                    guard self.sessionGeneration == currentGeneration else { return }
+                    // Ignore stale results from a previous session or restarted task
+                    guard self.sessionGeneration == currentGeneration,
+                          self.taskGeneration == thisTaskGen else { return }
                     self.retryCount = 0 // Reset on success
                     self.lastSpokenText = spoken
                     self.matchCharacters(spoken: spoken)
@@ -442,7 +446,9 @@ class SpeechRecognizer {
             }
             if let error {
                 DispatchQueue.main.async {
-                    // If recognitionRequest is nil, cleanup already ran (intentional cancel) — don't retry
+                    // Ignore errors from stale/replaced tasks
+                    guard self.taskGeneration == thisTaskGen else { return }
+                    // If recognitionRequest is nil, cleanup already ran (intentional cancel)
                     guard self.recognitionRequest != nil else { return }
                     guard self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty else {
                         self.isListening = false
@@ -497,7 +503,6 @@ class SpeechRecognizer {
     }
 
     private func restartRecognition() {
-        guard !isRestartingTask else { return }
         retryCount = 0
         isListening = true
         if audioEngine.isRunning {
@@ -519,9 +524,8 @@ class SpeechRecognizer {
     // MARK: - Soft restart (task only, keeps audio engine running)
 
     private func restartTask() {
-        // Prevent recursive restarts caused by cancel → error → restartTask loops
-        guard !isRestartingTask else { return }
-        isRestartingTask = true
+        // Bump generation so stale callbacks from the old task are ignored
+        taskGeneration += 1
 
         // Update match offset before restarting
         matchStartOffset = recognizedCharCount
@@ -569,12 +573,15 @@ class SpeechRecognizer {
         }
 
         let currentGeneration = sessionGeneration
+        let thisTaskGen = taskGeneration
         recognitionTask = speechRecognizer.recognitionTask(with: newRequest) { [weak self] result, error in
             guard let self else { return }
             if let result {
                 let spoken = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
-                    guard self.sessionGeneration == currentGeneration else { return }
+                    // Ignore stale results from a different session or restarted task
+                    guard self.sessionGeneration == currentGeneration,
+                          self.taskGeneration == thisTaskGen else { return }
                     self.retryCount = 0
                     self.lastSpokenText = spoken
                     self.matchCharacters(spoken: spoken)
@@ -582,8 +589,9 @@ class SpeechRecognizer {
             }
             if let error {
                 DispatchQueue.main.async {
-                    // Skip retry logic if we're actively in the middle of a task restart
-                    guard !self.isRestartingTask else { return }
+                    // Ignore errors from stale/replaced tasks — a new generation means
+                    // we intentionally cancelled this one and shouldn't restart on its behalf
+                    guard self.taskGeneration == thisTaskGen else { return }
                     guard self.recognitionRequest != nil else { return }
                     guard self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty else {
                         self.isListening = false
@@ -614,7 +622,6 @@ class SpeechRecognizer {
         }
 
         startPreemptiveTimer()
-        isRestartingTask = false
     }
 
     // MARK: - Pre-emptive restart timer
