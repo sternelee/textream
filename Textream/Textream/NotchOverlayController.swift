@@ -858,7 +858,7 @@ struct NotchOverlayView: View {
                 phoneticResult = nil
                 return
             }
-            // Show loading state immediately
+            // Show loading state immediately + pause recognition
             phoneticResult = PhoneticResult(
                 word: newWord,
                 phonetic: "",
@@ -867,19 +867,25 @@ struct NotchOverlayView: View {
                 pronunciation: ""
             )
             showPhoneticTooltip = true
+            speechRecognizer.pauseRecognition()
             // Fetch full phonetic hint (will update via onResult)
             PhoneticTooltipService.shared.onResult = { result in
                 guard let result = result else { return }
                 phoneticResult = result
-                // Keep tooltip visible (already shown)
             }
             PhoneticTooltipService.shared.fetchHint(for: newWord)
+        }
+        .onChange(of: showPhoneticTooltip) { _, visible in
+            if !visible {
+                speechRecognizer.unpauseRecognition()
+            }
         }
         .overlay(alignment: .bottom) {
             if showPhoneticTooltip, let result = phoneticResult {
                 PhoneticTooltipView(result: result) {
                     showPhoneticTooltip = false
                     phoneticResult = nil
+                    speechRecognizer.unpauseRecognition()
                 }
                 .padding(.bottom, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -919,7 +925,7 @@ struct NotchOverlayView: View {
                         if NotchSettings.shared.phoneticTooltipEnabled {
                             let word = speechRecognizer.findWordAt(charOffset: charOffset)
                             if !word.isEmpty {
-                                // Show loading state immediately
+                                // Show loading state immediately + pause recognition
                                 phoneticResult = PhoneticResult(
                                     word: word,
                                     phonetic: "",
@@ -928,6 +934,7 @@ struct NotchOverlayView: View {
                                     pronunciation: ""
                                 )
                                 showPhoneticTooltip = true
+                                speechRecognizer.pauseRecognition()
                                 // Fetch full data
                                 PhoneticTooltipService.shared.onResult = { result in
                                     guard let result = result else { return }

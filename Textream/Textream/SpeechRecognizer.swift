@@ -75,6 +75,9 @@ struct AudioInputDevice: Identifiable, Hashable {
 class SpeechRecognizer {
     var recognizedCharCount: Int = 0
     var isListening: Bool = false
+    /// Lightweight pause: audio buffers are not sent to the recognizer,
+    /// timers are suspended. Does NOT tear down the audio engine.
+    var isPaused: Bool = false
     var error: String?
     var audioLevels: [CGFloat] = Array(repeating: 0, count: 30)
     var lastSpokenText: String = ""
@@ -516,9 +519,36 @@ class SpeechRecognizer {
     // MARK: - Thread-safe buffer appending
 
     private func appendBufferToRequest(_ buffer: AVAudioPCMBuffer) {
+        guard !isPaused else { return }   // drop buffers while paused
         requestLock.lock()
         recognitionRequest?.append(buffer)
         requestLock.unlock()
+    }
+
+    /// Pause speech recognition without tearing down the audio engine.
+    func pauseRecognition() {
+        guard isListening, !isPaused else { return }
+        isPaused = true
+        // Freeze WPM / pause-detection timers so they don't drift
+        wpmUpdateTimer?.invalidate()
+        wpmUpdateTimer = nil
+        pauseCheckTimer?.invalidate()
+        pauseCheckTimer = nil
+        stopWordPauseTimer()
+        silenceStartTime = nil
+        isLongPause = false
+        currentDifficultWord = ""
+    }
+
+    /// Resume speech recognition after a lightweight pause.
+    func unpauseRecognition() {
+        guard isPaused else { return }
+        isPaused = false
+        // Restart timers only if we are still actively listening
+        if isListening {
+            speechStartTime = speechStartTime ?? Date()
+            startWPMTimer()
+        }
     }
 
     // MARK: - Soft restart (task only, keeps audio engine running)
