@@ -141,6 +141,12 @@ struct PracticeView: View {
                 // Stats grid
                 statsGrid(session: session)
 
+                // WPM Chart
+                WPMChartView(
+                    timestamps: session.wordTimestamps,
+                    duration: session.duration
+                )
+
                 // Playback
                 playbackControls(session: session)
 
