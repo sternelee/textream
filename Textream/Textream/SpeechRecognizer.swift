@@ -762,13 +762,14 @@ class SpeechRecognizer {
                 // Skip markup tags and annotations
                 if ScriptMarkupParser.tag(for: word) != nil { return "" }
                 if word.hasPrefix("[") && word.hasSuffix("]") { return "" }
-                let stripped = word.filter { $0.isLetter || $0.isNumber }
+                // Strip trailing punctuation for cleaner lookup
+                let stripped = word.trimmingCharacters(in: CharacterSet.punctuationCharacters)
                 guard !stripped.isEmpty else { return "" }
                 // Strip bold wrapper
-                if let boldText = ScriptMarkupParser.boldText(from: word) {
+                if let boldText = ScriptMarkupParser.boldText(from: stripped) {
                     return boldText
                 }
-                return word
+                return stripped
             }
             offset = wordEnd + 1 // +1 for space
         }

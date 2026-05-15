@@ -858,11 +858,20 @@ struct NotchOverlayView: View {
                 phoneticResult = nil
                 return
             }
-            // Fetch phonetic hint
+            // Show loading state immediately
+            phoneticResult = PhoneticResult(
+                word: newWord,
+                phonetic: "",
+                phoneticUK: "",
+                translation: "",
+                pronunciation: ""
+            )
+            showPhoneticTooltip = true
+            // Fetch full phonetic hint (will update via onResult)
             PhoneticTooltipService.shared.onResult = { result in
                 guard let result = result else { return }
                 phoneticResult = result
-                showPhoneticTooltip = true
+                // Keep tooltip visible (already shown)
             }
             PhoneticTooltipService.shared.fetchHint(for: newWord)
         }
@@ -910,10 +919,19 @@ struct NotchOverlayView: View {
                         if NotchSettings.shared.phoneticTooltipEnabled {
                             let word = speechRecognizer.findWordAt(charOffset: charOffset)
                             if !word.isEmpty {
+                                // Show loading state immediately
+                                phoneticResult = PhoneticResult(
+                                    word: word,
+                                    phonetic: "",
+                                    phoneticUK: "",
+                                    translation: "",
+                                    pronunciation: ""
+                                )
+                                showPhoneticTooltip = true
+                                // Fetch full data
                                 PhoneticTooltipService.shared.onResult = { result in
                                     guard let result = result else { return }
                                     phoneticResult = result
-                                    showPhoneticTooltip = true
                                 }
                                 PhoneticTooltipService.shared.fetchHint(for: word)
                             }

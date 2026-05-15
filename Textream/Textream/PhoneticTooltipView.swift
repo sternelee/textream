@@ -13,6 +13,10 @@ struct PhoneticTooltipView: View {
     
     @State private var appeared = false
     
+    private var hasAnyContent: Bool {
+        !result.phonetic.isEmpty || !result.phoneticUK.isEmpty || !result.translation.isEmpty || !result.pronunciation.isEmpty
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header with word
@@ -40,62 +44,74 @@ struct PhoneticTooltipView: View {
             Divider()
                 .background(Color.primary.opacity(0.1))
             
-            // IPA — show US and UK variants
-            if !result.phonetic.isEmpty || !result.phoneticUK.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    if !result.phonetic.isEmpty {
-                        HStack(spacing: 4) {
-                            Text("US")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .background(Color.red.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                            Text(result.phonetic)
-                                .font(.system(size: 14, weight: .medium, design: .serif))
-                                .foregroundStyle(.primary)
+            if hasAnyContent {
+                // IPA — show US and UK variants
+                if !result.phonetic.isEmpty || !result.phoneticUK.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if !result.phonetic.isEmpty {
+                            HStack(spacing: 4) {
+                                Text("US")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 3)
+                                    .padding(.vertical, 1)
+                                    .background(Color.red.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                Text(result.phonetic)
+                                    .font(.system(size: 14, weight: .medium, design: .serif))
+                                    .foregroundStyle(.primary)
+                            }
                         }
-                    }
-                    if !result.phoneticUK.isEmpty && result.phoneticUK != result.phonetic {
-                        HStack(spacing: 4) {
-                            Text("UK")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .background(Color.blue.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
-                            Text(result.phoneticUK)
-                                .font(.system(size: 14, weight: .medium, design: .serif))
-                                .foregroundStyle(.primary)
+                        if !result.phoneticUK.isEmpty && result.phoneticUK != result.phonetic {
+                            HStack(spacing: 4) {
+                                Text("UK")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 3)
+                                    .padding(.vertical, 1)
+                                    .background(Color.blue.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                                Text(result.phoneticUK)
+                                    .font(.system(size: 14, weight: .medium, design: .serif))
+                                    .foregroundStyle(.primary)
+                            }
                         }
                     }
                 }
-            }
-            
-            // Translation
-            if !result.translation.isEmpty {
-                HStack(spacing: 4) {
-                    Text(NotchSettings.shared.nativeLanguage.uppercased())
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
-                    Text(result.translation)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary)
+                
+                // Translation
+                if !result.translation.isEmpty {
+                    HStack(spacing: 4) {
+                        Text(NotchSettings.shared.nativeLanguage.uppercased())
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        Text(result.translation)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary)
+                    }
                 }
-            }
-            
-            // Pronunciation guide
-            if !result.pronunciation.isEmpty {
-                HStack(alignment: .top, spacing: 4) {
-                    Text("💡")
-                        .font(.system(size: 11))
-                    Text(result.pronunciation)
+                
+                // Pronunciation guide
+                if !result.pronunciation.isEmpty {
+                    HStack(alignment: .top, spacing: 4) {
+                        Text("💡")
+                            .font(.system(size: 11))
+                        Text(result.pronunciation)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.primary.opacity(0.8))
+                            .lineLimit(3)
+                    }
+                }
+            } else {
+                // Loading state: data not yet available
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Looking up…")
                         .font(.system(size: 12))
-                        .foregroundStyle(.primary.opacity(0.8))
-                        .lineLimit(3)
+                        .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
             }
         }
         .padding(12)
