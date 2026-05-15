@@ -45,11 +45,16 @@ class TextreamService: NSObject, ObservableObject {
         launchedExternally = true
         hideMainWindow()
 
+        // Save initial progress
+        saveReadingProgress(charOffset: 0)
+
         overlayController.show(text: trimmed, hasNextPage: hasNextPage) { [weak self] in
             self?.externalDisplayController.dismiss()
             self?.browserServer.hideContent()
             self?.onOverlayDismissed?()
             self?.stopProgressMonitoring()
+            // Clear progress if we finished reading
+            ReadingProgressStore.shared.clear()
         }
         startProgressMonitoring()
         updatePageInfo()
@@ -106,6 +111,9 @@ class TextreamService: NSObject, ObservableObject {
         let text = pages[index].trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
+        // Save progress before switching pages
+        saveReadingProgress(charOffset: overlayController.speechRecognizer.recognizedCharCount)
+
         // Mute mic before switching page content
         let wasListening = overlayController.speechRecognizer.isListening
         if wasListening {
@@ -146,6 +154,9 @@ class TextreamService: NSObject, ObservableObject {
                 self?.overlayController.speechRecognizer.resume()
             }
         }
+
+        // Resume progress tracking for new page
+        startProgressSaving()
     }
 
     func updatePageInfo() {
@@ -274,6 +285,75 @@ class TextreamService: NSObject, ObservableObject {
         progressMonitorTimer?.invalidate()
         progressMonitorTimer = nil
         hasTriggeredPreGenerate = false
+        stopProgressSaving()
+    }
+
+    // MARK: - Reading Progress
+
+    private var progressSaveTimer: Timer?
+
+    private func startProgressSaving() {
+        progressSaveTimer?.invalidate()
+        progressSaveTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.saveCurrentProgress()
+        }
+    }
+
+    private func stopProgressSaving() {
+        progressSaveTimer?.invalidate()
+        progressSaveTimer = nil
+    }
+
+    private func saveCurrentProgress() {
+        let offset = overlayController.speechRecognizer.recognizedCharCount
+        saveReadingProgress(charOffset: offset)
+    }
+
+    func saveReadingProgress(charOffset: Int) {
+        let snippet = wordSnippet(around: charOffset)
+        let progress = ReadingProgress(
+            fileURL: currentFileURL?.absoluteString,
+            fileHash: contentHash(pages: pages),
+            pageIndex: currentPageIndex,
+            charOffset: charOffset,
+            timestamp: Date(),
+            wordSnippet: snippet,
+            pageCount: pages.count
+        )
+        ReadingProgressStore.shared.save(progress: progress)
+    }
+
+    private func contentHash(pages: [String]) -> String {
+        let content = pages.joined(separator: "\n---PAGE---\n")
+        let data = Data(content.utf8)
+        return data.base64EncodedString().prefix(16).description
+    }
+
+    private func wordSnippet(around charOffset: Int) -> String {
+        let text = currentPageText
+        let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        var count = 0
+        var targetIndex = 0
+        for (i, word) in words.enumerated() {
+            count += word.count + 1
+            if count >= charOffset {
+                targetIndex = i
+                break
+            }
+        }
+        let start = max(0, targetIndex - 3)
+        let end = min(words.count, targetIndex + 4)
+        return words[start..<end].joined(separator: " ")
+    }
+
+    func resumeReading(from progress: ReadingProgress) {
+        guard progress.pageIndex < pages.count else { return }
+        currentPageIndex = progress.pageIndex
+        readCurrentPage()
+        // Jump to saved char offset after overlay appears
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.overlayController.speechRecognizer.jumpTo(charOffset: progress.charOffset)
+        }
     }
 
     func clearPreGenerated() {

@@ -75,6 +75,9 @@ struct AudioInputDevice: Identifiable, Hashable {
 class SpeechRecognizer {
     var recognizedCharCount: Int = 0
     var isListening: Bool = false
+    /// Lightweight pause: audio buffers are not sent to the recognizer,
+    /// timers are suspended. Does NOT tear down the audio engine.
+    var isPaused: Bool = false
     var error: String?
     var audioLevels: [CGFloat] = Array(repeating: 0, count: 30)
     var lastSpokenText: String = ""
@@ -98,6 +101,21 @@ class SpeechRecognizer {
     private let longPauseThreshold: TimeInterval = 2.5 // seconds
     private let silenceThreshold: CGFloat = 0.03
     private var pauseCheckTimer: Timer?
+    
+    // MARK: - Word-level pause tracking for phonetic tooltips
+    
+    /// The word the user is currently stuck on (detected via long pause)
+    var currentDifficultWord: String = ""
+    /// When the user started pausing on the current word
+    var difficultWordStartTime: Date?
+    /// Timestamp of when each word was first recognized
+    private var wordTimestamps: [(word: String, charOffset: Int, recognizedAt: Date)] = []
+    /// Last recognized char count for detecting progress
+    private var lastRecognizedCharCount: Int = 0
+    /// Timer for detecting per-word pauses
+    private var wordPauseTimer: Timer?
+    /// Words from source text for lookup
+    private var sourceWordsList: [String] = []
 
     /// True when recent audio levels indicate the user is actively speaking
     var isSpeaking: Bool {
@@ -125,6 +143,10 @@ class SpeechRecognizer {
     /// Sliding window of recent match positions for confidence gating.
     /// We require 2-of-3 recent results to agree before committing a forward jump.
     private var recentMatchPositions: [Int] = []
+    /// Monotonically increasing ID for each recognition task. Stale error callbacks
+    /// from cancelled tasks check this and bail out, preventing cancel → error →
+    /// restartTask infinite loops that freeze the main thread.
+    private var taskGeneration: UInt64 = 0
 
     /// Update the source text while preserving the current recognized char count.
     /// Used by Director Mode to live-edit unread text without resetting read progress.
@@ -158,6 +180,7 @@ class SpeechRecognizer {
         let collapsed = words.joined(separator: " ")
         sourceText = collapsed
         normalizedSource = Self.normalize(collapsed)
+        sourceWordsList = words
         recognizedCharCount = 0
         matchStartOffset = 0
         retryCount = 0
@@ -165,6 +188,10 @@ class SpeechRecognizer {
         currentWPM = 0
         wpmHistory = []
         speechStartTime = nil
+        currentDifficultWord = ""
+        difficultWordStartTime = nil
+        wordTimestamps = []
+        lastRecognizedCharCount = 0
         error = nil
         sessionGeneration += 1
 
@@ -406,13 +433,15 @@ class SpeechRecognizer {
         }
 
         let currentGeneration = sessionGeneration
+        let thisTaskGen = taskGeneration
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self else { return }
             if let result {
                 let spoken = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
-                    // Ignore stale results from a previous session
-                    guard self.sessionGeneration == currentGeneration else { return }
+                    // Ignore stale results from a previous session or restarted task
+                    guard self.sessionGeneration == currentGeneration,
+                          self.taskGeneration == thisTaskGen else { return }
                     self.retryCount = 0 // Reset on success
                     self.lastSpokenText = spoken
                     self.matchCharacters(spoken: spoken)
@@ -420,7 +449,9 @@ class SpeechRecognizer {
             }
             if let error {
                 DispatchQueue.main.async {
-                    // If recognitionRequest is nil, cleanup already ran (intentional cancel) — don't retry
+                    // Ignore errors from stale/replaced tasks
+                    guard self.taskGeneration == thisTaskGen else { return }
+                    // If recognitionRequest is nil, cleanup already ran (intentional cancel)
                     guard self.recognitionRequest != nil else { return }
                     guard self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty else {
                         self.isListening = false
@@ -488,14 +519,49 @@ class SpeechRecognizer {
     // MARK: - Thread-safe buffer appending
 
     private func appendBufferToRequest(_ buffer: AVAudioPCMBuffer) {
+        guard !isPaused else { return }   // drop buffers while paused
         requestLock.lock()
         recognitionRequest?.append(buffer)
         requestLock.unlock()
     }
 
+    /// Pause speech recognition without tearing down the audio engine.
+    func pauseRecognition() {
+        guard isListening, !isPaused else { return }
+        isPaused = true
+        // Freeze WPM / pause-detection timers so they don't drift
+        wpmUpdateTimer?.invalidate()
+        wpmUpdateTimer = nil
+        pauseCheckTimer?.invalidate()
+        pauseCheckTimer = nil
+        stopWordPauseTimer()
+        silenceStartTime = nil
+        isLongPause = false
+        // NOTE: do NOT clear currentDifficultWord here — doing so triggers
+        // onChange(of: currentDifficultWord) which would immediately dismiss
+        // the phonetic tooltip we're about to show.
+    }
+
+    /// Resume speech recognition after a lightweight pause.
+    func unpauseRecognition() {
+        guard isPaused else { return }
+        isPaused = false
+        // Clear the difficult word so the same word doesn't re-trigger a tooltip
+        currentDifficultWord = ""
+        difficultWordStartTime = nil
+        // Restart timers only if we are still actively listening
+        if isListening {
+            speechStartTime = speechStartTime ?? Date()
+            startWPMTimer()
+        }
+    }
+
     // MARK: - Soft restart (task only, keeps audio engine running)
 
     private func restartTask() {
+        // Bump generation so stale callbacks from the old task are ignored
+        taskGeneration += 1
+
         // Update match offset before restarting
         matchStartOffset = recognizedCharCount
         recentMatchPositions = []
@@ -542,12 +608,15 @@ class SpeechRecognizer {
         }
 
         let currentGeneration = sessionGeneration
+        let thisTaskGen = taskGeneration
         recognitionTask = speechRecognizer.recognitionTask(with: newRequest) { [weak self] result, error in
             guard let self else { return }
             if let result {
                 let spoken = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
-                    guard self.sessionGeneration == currentGeneration else { return }
+                    // Ignore stale results from a different session or restarted task
+                    guard self.sessionGeneration == currentGeneration,
+                          self.taskGeneration == thisTaskGen else { return }
                     self.retryCount = 0
                     self.lastSpokenText = spoken
                     self.matchCharacters(spoken: spoken)
@@ -555,6 +624,9 @@ class SpeechRecognizer {
             }
             if let error {
                 DispatchQueue.main.async {
+                    // Ignore errors from stale/replaced tasks — a new generation means
+                    // we intentionally cancelled this one and shouldn't restart on its behalf
+                    guard self.taskGeneration == thisTaskGen else { return }
                     guard self.recognitionRequest != nil else { return }
                     guard self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty else {
                         self.isListening = false
@@ -613,6 +685,7 @@ class SpeechRecognizer {
         pauseCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.checkPauseAndPacing()
         }
+        startWordPauseTimer()
     }
     
     private func stopWPMTimer() {
@@ -620,6 +693,7 @@ class SpeechRecognizer {
         wpmUpdateTimer = nil
         pauseCheckTimer?.invalidate()
         pauseCheckTimer = nil
+        stopWordPauseTimer()
     }
     
     private func checkPauseAndPacing() {
@@ -666,6 +740,93 @@ class SpeechRecognizer {
         wpmHistory.append(wpm)
         if wpmHistory.count > 20 {
             wpmHistory.removeFirst()
+        }
+    }
+    
+    // MARK: - Per-word pause detection for phonetic tooltips
+    
+    private func startWordPauseTimer() {
+        wordPauseTimer?.invalidate()
+        wordPauseTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            self?.checkWordPause()
+        }
+    }
+    
+    private func stopWordPauseTimer() {
+        wordPauseTimer?.invalidate()
+        wordPauseTimer = nil
+    }
+    
+    private func checkWordPause() {
+        guard NotchSettings.shared.phoneticTooltipEnabled,
+              !sourceWordsList.isEmpty else { return }
+        
+        let threshold = NotchSettings.shared.pauseThreshold
+        
+        // If no progress has been made since last check and we're in a pause
+        if recognizedCharCount == lastRecognizedCharCount {
+            if let pauseStart = silenceStartTime {
+                let pauseDuration = Date().timeIntervalSince(pauseStart)
+                if pauseDuration >= threshold {
+                    // Find the current word at the pause position
+                    let word = findWordAt(charOffset: recognizedCharCount)
+                    if !word.isEmpty && word != currentDifficultWord {
+                        currentDifficultWord = word
+                        difficultWordStartTime = pauseStart
+                    }
+                }
+            }
+        } else {
+            // Progress was made, record timestamp for the newly recognized words
+            recordWordTimestamps()
+            // Clear difficult word if progress resumes
+            if currentDifficultWord.isEmpty == false {
+                currentDifficultWord = ""
+                difficultWordStartTime = nil
+            }
+        }
+        lastRecognizedCharCount = recognizedCharCount
+    }
+    
+    /// Find the word at a given character offset
+    func findWordAt(charOffset: Int) -> String {
+        var offset = 0
+        for word in sourceWordsList {
+            let wordEnd = offset + word.count
+            if charOffset >= offset && charOffset <= wordEnd {
+                // Skip markup tags and annotations
+                if ScriptMarkupParser.tag(for: word) != nil { return "" }
+                if word.hasPrefix("[") && word.hasSuffix("]") { return "" }
+                // Strip trailing punctuation for cleaner lookup
+                let stripped = word.trimmingCharacters(in: CharacterSet.punctuationCharacters)
+                guard !stripped.isEmpty else { return "" }
+                // Strip bold wrapper
+                if let boldText = ScriptMarkupParser.boldText(from: stripped) {
+                    return boldText
+                }
+                return stripped
+            }
+            offset = wordEnd + 1 // +1 for space
+        }
+        return ""
+    }
+    
+    /// Record timestamps for newly recognized words
+    private func recordWordTimestamps() {
+        guard let startTime = speechStartTime else { return }
+        let elapsed = Date().timeIntervalSince(startTime)
+        
+        var offset = 0
+        for word in sourceWordsList {
+            let wordEnd = offset + word.count
+            // If this word was newly recognized (its end is within the recognized range)
+            if wordEnd <= recognizedCharCount {
+                let alreadyRecorded = wordTimestamps.contains { $0.charOffset == offset }
+                if !alreadyRecorded {
+                    wordTimestamps.append((word: word, charOffset: offset, recognizedAt: Date(timeInterval: -elapsed + Double(wordEnd) / Double(max(1, sourceText.count)) * elapsed, since: startTime)))
+                }
+            }
+            offset = wordEnd + 1
         }
     }
     
