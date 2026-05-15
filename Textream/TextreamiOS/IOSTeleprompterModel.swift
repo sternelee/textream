@@ -69,6 +69,9 @@ final class IOSTeleprompterModel {
     var nativeLanguage: String = "zh" {
         didSet { persistReaderSettingsIfNeeded() }
     }
+    var phoneticSource: PhoneticSource = .aiGenerated {
+        didSet { persistReaderSettingsIfNeeded() }
+    }
     var pageTitle: String = "Untitled" {
         didSet { persistDraftIfNeeded() }
     }
@@ -626,6 +629,7 @@ final class IOSTeleprompterModel {
         speechLocale = .system
         phoneticTooltipEnabled = true
         nativeLanguage = "zh"
+        phoneticSource = .aiGenerated
         isRestoringPersistentState = false
         persistReaderSettings()
         documentStatusMessage = "Reader settings reset to defaults."
@@ -803,6 +807,7 @@ final class IOSTeleprompterModel {
         speechLocale = settings.speechLocale
         phoneticTooltipEnabled = settings.phoneticTooltipEnabled
         nativeLanguage = settings.nativeLanguage
+        phoneticSource = settings.phoneticSource
 
         if let draft = decode(IOSDraftState.self, forKey: draftStateKey) {
             document = draft.document
@@ -849,7 +854,8 @@ final class IOSTeleprompterModel {
             mirrorModeEnabled: mirrorModeEnabled,
             forceDarkMode: forceDarkMode,
             phoneticTooltipEnabled: phoneticTooltipEnabled,
-            nativeLanguage: nativeLanguage
+            nativeLanguage: nativeLanguage,
+            phoneticSource: phoneticSource
         )
         encode(settings, forKey: readerSettingsKey)
     }

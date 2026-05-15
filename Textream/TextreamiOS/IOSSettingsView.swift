@@ -7,6 +7,7 @@ struct IOSSettingsView: View {
     @State private var isTestingMic = false
     @State private var micTestLevel: Double = 0
     @State private var micTestTimer: Timer?
+    @State private var micRecorder: AVAudioRecorder?
     @State private var isFetchingModels = false
     @State private var fetchedModels: [String] = []
     @State private var aiConfigMessage: String? = nil
@@ -151,6 +152,11 @@ struct IOSSettingsView: View {
 
                 Section("Phonetic Lookup") {
                     Toggle("Enable lookup", isOn: $model.phoneticTooltipEnabled)
+                    Picker("Phonetic source", selection: $model.phoneticSource) {
+                        ForEach(PhoneticSource.allCases) { source in
+                            Label(source.label, systemImage: source.icon).tag(source)
+                        }
+                    }
                     Picker("Native language", selection: $model.nativeLanguage) {
                         Text("中文").tag("zh")
                         Text("日本語").tag("ja")
@@ -284,16 +290,48 @@ struct IOSSettingsView: View {
     private func startMicTest() {
         isTestingMic = true
         micTestLevel = 0
-        model.audioMonitor.start()
-        micTestTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            micTestLevel = model.audioMonitor.averageLevel
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try session.setActive(true)
+        } catch {
+            isTestingMic = false
+            return
+        }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("micTest.caf")
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatAppleLossless),
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.min.rawValue
+        ]
+
+        do {
+            let recorder = try AVAudioRecorder(url: url, settings: settings)
+            recorder.isMeteringEnabled = true
+            recorder.record()
+            micRecorder = recorder
+            micTestTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                recorder.updateMeters()
+                let db = recorder.averagePower(forChannel: 0)
+                let level = Double(pow(10, db / 20))
+                micTestLevel = min(max(level, 0), 1)
+            }
+        } catch {
+            isTestingMic = false
         }
     }
 
     private func stopMicTest() {
         micTestTimer?.invalidate()
         micTestTimer = nil
-        model.audioMonitor.stop()
+        micRecorder?.stop()
+        micRecorder = nil
+        do {
+            try AVAudioSession.sharedInstance().setActive(false)
+        } catch {}
         isTestingMic = false
         micTestLevel = 0
     }
@@ -312,7 +350,8 @@ struct IOSSettingsView: View {
             mirrorModeEnabled: model.mirrorModeEnabled,
             forceDarkMode: model.forceDarkMode,
             phoneticTooltipEnabled: model.phoneticTooltipEnabled,
-            nativeLanguage: model.nativeLanguage
+            nativeLanguage: model.nativeLanguage,
+            phoneticSource: model.phoneticSource
         )
         do {
             let data = try JSONEncoder().encode(settings)
@@ -348,6 +387,7 @@ struct IOSSettingsView: View {
             model.forceDarkMode = settings.forceDarkMode
             model.phoneticTooltipEnabled = settings.phoneticTooltipEnabled
             model.nativeLanguage = settings.nativeLanguage
+            model.phoneticSource = settings.phoneticSource
             settingsImportMessage = "Imported settings successfully."
         } catch {
             settingsImportMessage = "Invalid settings JSON: \(error.localizedDescription)"

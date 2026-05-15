@@ -11,6 +11,7 @@ import AVFoundation
 struct PhoneticTooltipView: View {
     let word: String
     let nativeLanguage: String
+    let phoneticSource: PhoneticSource
     @State private var result: PhoneticResult?
     @State private var isLoading = true
     @State private var isSpeaking = false
@@ -157,7 +158,7 @@ struct PhoneticTooltipView: View {
     private func loadPhonetic() async {
         isLoading = true
         result = nil
-        result = await PhoneticTooltipService.shared.fetchHintAsync(for: word, targetLanguage: nativeLanguage)
+        result = await PhoneticTooltipService.shared.fetchHintAsync(for: word, targetLanguage: nativeLanguage, source: phoneticSource)
         isLoading = false
     }
 
@@ -177,5 +178,5 @@ struct PhoneticTooltipView: View {
 }
 
 #Preview {
-    PhoneticTooltipView(word: "entrepreneur", nativeLanguage: "zh")
+    PhoneticTooltipView(word: "entrepreneur", nativeLanguage: "zh", phoneticSource: .aiGenerated)
 }

@@ -98,7 +98,7 @@ struct IOSReaderView: View {
         }
         .sheet(isPresented: $showPhoneticTooltip) {
             if let word = selectedWordForLookup {
-                PhoneticTooltipView(word: word, nativeLanguage: model.nativeLanguage)
+                PhoneticTooltipView(word: word, nativeLanguage: model.nativeLanguage, phoneticSource: model.phoneticSource)
             }
         }
     }
@@ -166,116 +166,170 @@ struct IOSReaderView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    @ViewBuilder
     private func topBar(compact: Bool) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                model.stopReading()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 42, height: 42)
-                    .background(.white.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+        if compact || horizontalSizeClass == .compact {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    closeButton
+                    titleBlock(compact: compact)
+                    Spacer(minLength: 0)
+                    modeLabel
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        speedSizeLabel
+                        timeLabel
+                        Spacer(minLength: 0)
+                        jumpToStartButton
+                        jumpToEndButton
+                        jumpToPageButton
+                        bookmarkButton
+                        bookmarkJumpButton
+                    }
+                }
             }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(model.currentDocumentDisplayName)
-                    .font(compact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text("Page \(model.document.currentPageIndex + 1) of \(model.document.pages.count)")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.65))
+        } else {
+            HStack(spacing: 12) {
+                closeButton
+                titleBlock(compact: compact)
+                Spacer(minLength: 0)
+                speedSizeLabel
+                timeLabel
+                jumpToStartButton
+                jumpToEndButton
+                jumpToPageButton
+                bookmarkButton
+                bookmarkJumpButton
+                modeLabel
             }
+        }
+    }
 
-            Spacer(minLength: 0)
+    private var closeButton: some View {
+        Button {
+            model.stopReading()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.headline.weight(.semibold))
+                .frame(width: 42, height: 42)
+                .background(.white.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
 
-            if !compact {
-                Text("\(Int(model.scrollSpeedWordsPerSecond))w/s · \(Int(model.readerFontSize))pt")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.trailing, 4)
-            }
+    private func titleBlock(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(model.currentDocumentDisplayName)
+                .font(compact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Text("Page \(model.document.currentPageIndex + 1) of \(model.document.pages.count)")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.65))
+        }
+    }
 
+    private var speedSizeLabel: some View {
+        Text("\(Int(model.scrollSpeedWordsPerSecond))w/s · \(Int(model.readerFontSize))pt")
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.white.opacity(0.55))
+            .padding(.trailing, 4)
+    }
+
+    private var timeLabel: some View {
+        Group {
             if !currentTimeString.isEmpty {
                 Text(currentTimeString)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.55))
                     .padding(.trailing, 4)
             }
-
-            Button {
-                model.jumpToWord(index: 0)
-            } label: {
-                Image(systemName: "arrow.up.to.line.compact")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.home, modifiers: [])
-
-            Button {
-                model.jumpToEnd()
-            } label: {
-                Image(systemName: "arrow.down.to.line.compact")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.end, modifiers: [])
-
-            Button {
-                showingJumpToPage = true
-            } label: {
-                Image(systemName: "number")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                model.setBookmark()
-            } label: {
-                Image(systemName: "bookmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                model.jumpToBookmark()
-            } label: {
-                Image(systemName: model.hasBookmark() ? "bookmark.fill" : "bookmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(model.hasBookmark() ? model.highlightColorPreset.tint : .white)
-                    .frame(width: 34, height: 34)
-                    .background(.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            .disabled(!model.hasBookmark())
-
-            Label(model.session.mode.label, systemImage: modeSymbol)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, compact ? 10 : 12)
-                .padding(.vertical, 10)
-                .background(model.highlightColorPreset.softBackground)
-                .foregroundStyle(model.highlightColorPreset.tint)
-                .clipShape(Capsule())
         }
+    }
+
+    private var jumpToStartButton: some View {
+        Button {
+            model.jumpToWord(index: 0)
+        } label: {
+            Image(systemName: "arrow.up.to.line.compact")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.home, modifiers: [])
+    }
+
+    private var jumpToEndButton: some View {
+        Button {
+            model.jumpToEnd()
+        } label: {
+            Image(systemName: "arrow.down.to.line.compact")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.end, modifiers: [])
+    }
+
+    private var jumpToPageButton: some View {
+        Button {
+            showingJumpToPage = true
+        } label: {
+            Image(systemName: "number")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var bookmarkButton: some View {
+        Button {
+            model.setBookmark()
+        } label: {
+            Image(systemName: "bookmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var bookmarkJumpButton: some View {
+        Button {
+            model.jumpToBookmark()
+        } label: {
+            Image(systemName: model.hasBookmark() ? "bookmark.fill" : "bookmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(model.hasBookmark() ? model.highlightColorPreset.tint : .white)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.hasBookmark())
+    }
+
+    private var modeLabel: some View {
+        Label(model.session.mode.label, systemImage: modeSymbol)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(model.highlightColorPreset.softBackground)
+            .foregroundStyle(model.highlightColorPreset.tint)
+            .clipShape(Capsule())
     }
 
     private var pageIndicatorDots: some View {
@@ -1019,6 +1073,7 @@ struct IOSReaderView: View {
         } label: {
             Text(word)
                 .font(.system(size: model.readerFontSize, weight: index == model.currentWordIndex ? .bold : .semibold, design: model.readerFontFamily.fontDesign))
+                .lineLimit(1)
                 .multilineTextAlignment(.leading)
                 .padding(.horizontal, compact ? 8 : 10)
                 .padding(.vertical, compact ? 7 : 8)

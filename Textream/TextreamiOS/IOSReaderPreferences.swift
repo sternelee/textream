@@ -88,6 +88,27 @@ enum IOSSpeechLocaleOption: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum PhoneticSource: String, CaseIterable, Codable, Identifiable {
+    case localDictionary
+    case aiGenerated
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .localDictionary: return "Local Dictionary"
+        case .aiGenerated: return "AI Generated"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .localDictionary: return "book.fill"
+        case .aiGenerated: return "sparkles"
+        }
+    }
+}
+
 enum IOSTeleprompterSample: String, CaseIterable, Identifiable {
     case shortEnglish
     case chinese
@@ -163,6 +184,7 @@ struct IOSPersistedReaderSettings: Codable, Equatable {
     var forceDarkMode: Bool = true
     var phoneticTooltipEnabled: Bool = true
     var nativeLanguage: String = "zh"
+    var phoneticSource: PhoneticSource = .aiGenerated
 }
 
 struct IOSDraftState: Codable, Equatable {
