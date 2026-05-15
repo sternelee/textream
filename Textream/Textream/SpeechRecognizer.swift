@@ -754,7 +754,7 @@ class SpeechRecognizer {
     }
     
     /// Find the word at a given character offset
-    private func findWordAt(charOffset: Int) -> String {
+    func findWordAt(charOffset: Int) -> String {
         var offset = 0
         for word in sourceWordsList {
             let wordEnd = offset + word.count

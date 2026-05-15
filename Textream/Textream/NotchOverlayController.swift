@@ -905,6 +905,22 @@ struct NotchOverlayView: View {
                 cueUnreadOpacity: NotchSettings.shared.cueBrightness.unreadOpacity,
                 cueReadOpacity: NotchSettings.shared.cueBrightness.readOpacity,
                 onWordTap: { charOffset in
+                    // Option+Click triggers phonetic tooltip for the clicked word
+                    if NSEvent.modifierFlags.contains(.option) {
+                        if NotchSettings.shared.phoneticTooltipEnabled {
+                            let word = speechRecognizer.findWordAt(charOffset: charOffset)
+                            if !word.isEmpty {
+                                PhoneticTooltipService.shared.onResult = { result in
+                                    guard let result = result else { return }
+                                    phoneticResult = result
+                                    showPhoneticTooltip = true
+                                }
+                                PhoneticTooltipService.shared.fetchHint(for: word)
+                            }
+                        }
+                        return
+                    }
+                    // Normal click jumps to word
                     if listeningMode == .wordTracking {
                         speechRecognizer.jumpTo(charOffset: charOffset)
                     } else {
