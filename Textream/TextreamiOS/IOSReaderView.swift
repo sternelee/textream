@@ -936,25 +936,30 @@ struct IOSReaderView: View {
                         }
                         Button {
                             withAnimation(.spring()) {
-                                fullImmersion = true
-                                if !hasShownFullImmersionHint {
-                                    showFullImmersionHint = true
-                                    hasShownFullImmersionHint = true
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                                        withAnimation { showFullImmersionHint = false }
+                                if fullImmersion {
+                                    fullImmersion = false
+                                    showQuickSettings = false
+                                } else {
+                                    fullImmersion = true
+                                    if !hasShownFullImmersionHint {
+                                        showFullImmersionHint = true
+                                        hasShownFullImmersionHint = true
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                            withAnimation { showFullImmersionHint = false }
+                                        }
                                     }
                                 }
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                Text("Full Screen")
+                                Image(systemName: fullImmersion ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                Text(fullImmersion ? "Exit Full Screen" : "Full Screen")
                                     .font(.caption.weight(.bold))
                             }
                             .foregroundStyle(.white)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.12))
+                            .background(fullImmersion ? model.highlightColorPreset.tint.opacity(0.25) : Color.white.opacity(0.12))
                             .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
