@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showAbout = false
     @State private var showAIGenerate = false
+    @State private var showPractice = false
     @FocusState private var isTextFocused: Bool
 
     private let defaultText = """
@@ -493,6 +494,21 @@ Happy presenting! [wave]
                     }
                     .buttonStyle(.plain)
 
+                    // Practice button
+                    Button {
+                        showPractice = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "mic.circle")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Practice")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(service.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
                     Button {
                         showSettings = true
                     } label: {
@@ -517,6 +533,9 @@ Happy presenting! [wave]
         }
         .sheet(isPresented: $showAIGenerate) {
             AIGenerateView()
+        }
+        .sheet(isPresented: $showPractice) {
+            PracticeView(scriptText: service.currentPageText)
         }
         .sheet(isPresented: $showAbout) {
             AboutView()
