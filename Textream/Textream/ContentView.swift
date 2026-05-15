@@ -195,13 +195,20 @@ Happy presenting! [wave]
         HStack(spacing: 0) {
             // Paragraph outline sidebar
             if !currentText.wrappedValue.isEmpty {
-                ScriptOutlineView(
-                    text: currentText.wrappedValue,
-                    currentCharOffset: editorCaretPosition,
-                    onJump: { offset in
-                        dictationCaretPosition = offset
-                    }
-                )
+                VStack(spacing: 8) {
+                    ScriptOutlineView(
+                        text: currentText.wrappedValue,
+                        currentCharOffset: editorCaretPosition,
+                        onJump: { offset in
+                            dictationCaretPosition = offset
+                        }
+                    )
+                    ScriptMiniMapView(
+                        text: currentText.wrappedValue,
+                        currentCharOffset: editorCaretPosition
+                    )
+                    Spacer()
+                }
                 .padding(.leading, 12)
                 .padding(.trailing, 4)
                 .padding(.top, 8)
