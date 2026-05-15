@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var dictationHighlightRange: NSRange? = nil
     @State private var dictationCaretPosition: Int? = nil
     @State private var editorCaretPosition: Int = 0
+    @State private var selectedText: String = ""
+    @State private var showPolish = false
     @State private var isDroppingPresentation = false
     @State private var dropError: String?
     @State private var dropAlertTitle: String = "Import Error"
@@ -211,7 +213,8 @@ Happy presenting! [wave]
                     font: .systemFont(ofSize: 16, weight: .regular).rounded,
                     highlightRange: dictationHighlightRange,
                     caretPosition: $dictationCaretPosition,
-                    editorCaretPosition: $editorCaretPosition
+                    editorCaretPosition: $editorCaretPosition,
+                    selectedText: $selectedText
                 )
                 .onChange(of: editorCaretPosition) { _, newPos in
                     guard isRecording else { return }
@@ -494,6 +497,22 @@ Happy presenting! [wave]
                     }
                     .buttonStyle(.plain)
 
+                    // AI Polish button
+                    Button {
+                        showPolish = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Polish")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedText.isEmpty || !AIScriptService.shared.hasAPIKey)
+                    .opacity(selectedText.isEmpty ? 0.4 : 1)
+
                     // Practice button
                     Button {
                         showPractice = true
@@ -533,6 +552,22 @@ Happy presenting! [wave]
         }
         .sheet(isPresented: $showAIGenerate) {
             AIGenerateView()
+        }
+        .sheet(isPresented: $showPolish) {
+            AIPolishView(
+                selectedText: selectedText.isEmpty ? service.currentPageText : selectedText,
+                onApply: { polished in
+                    guard service.currentPageIndex < service.pages.count else { return }
+                    if selectedText.isEmpty {
+                        service.pages[service.currentPageIndex] = polished
+                    } else {
+                        // Replace selected text in the current page
+                        let text = service.pages[service.currentPageIndex]
+                        guard let range = text.range(of: selectedText) else { return }
+                        service.pages[service.currentPageIndex].replaceSubrange(range, with: polished)
+                    }
+                }
+            )
         }
         .sheet(isPresented: $showPractice) {
             PracticeView(scriptText: service.currentPageText)

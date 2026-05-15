@@ -25,6 +25,8 @@ struct HighlightingTextEditor: NSViewRepresentable {
     @Binding var caretPosition: Int?
     /// Continuously reported current caret position in the editor
     @Binding var editorCaretPosition: Int
+    /// Currently selected text in the editor
+    @Binding var selectedText: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -112,10 +114,17 @@ struct HighlightingTextEditor: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            let pos = textView.selectedRange().location
-            if parent.editorCaretPosition != pos {
+            let range = textView.selectedRange()
+            if parent.editorCaretPosition != range.location {
                 DispatchQueue.main.async { [weak self] in
-                    self?.parent.editorCaretPosition = pos
+                    self?.parent.editorCaretPosition = range.location
+                }
+            }
+            // Extract selected text
+            let selected = (textView.string as NSString).substring(with: range)
+            if parent.selectedText != selected {
+                DispatchQueue.main.async { [weak self] in
+                    self?.parent.selectedText = selected
                 }
             }
         }
