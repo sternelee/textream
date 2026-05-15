@@ -906,6 +906,19 @@ struct NotchOverlayView: View {
                 .frame(width: 80, height: 24)
                 .clipped()
 
+                // WPM indicator
+                if listeningMode == .wordTracking && speechRecognizer.currentWPM > 0 {
+                    HStack(spacing: 2) {
+                        Text("\(Int(speechRecognizer.currentWPM))")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(speechRecognizer.wpmStatusColor)
+                        Text("WPM")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    .frame(width: 50, alignment: .leading)
+                }
+
                 if listeningMode == .wordTracking {
                     Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
                         .font(.system(size: 11, weight: .medium))
