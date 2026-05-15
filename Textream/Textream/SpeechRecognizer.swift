@@ -537,13 +537,18 @@ class SpeechRecognizer {
         stopWordPauseTimer()
         silenceStartTime = nil
         isLongPause = false
-        currentDifficultWord = ""
+        // NOTE: do NOT clear currentDifficultWord here — doing so triggers
+        // onChange(of: currentDifficultWord) which would immediately dismiss
+        // the phonetic tooltip we're about to show.
     }
 
     /// Resume speech recognition after a lightweight pause.
     func unpauseRecognition() {
         guard isPaused else { return }
         isPaused = false
+        // Clear the difficult word so the same word doesn't re-trigger a tooltip
+        currentDifficultWord = ""
+        difficultWordStartTime = nil
         // Restart timers only if we are still actively listening
         if isListening {
             speechStartTime = speechStartTime ?? Date()
