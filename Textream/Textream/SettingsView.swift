@@ -765,6 +765,74 @@ struct SettingsView: View {
                 }
             }
 
+            // Phonetic Tooltip Settings
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: $settings.phoneticTooltipEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Phonetic Tooltip")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Show IPA and translation when you pause on a difficult word.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+                if settings.phoneticTooltipEnabled {
+                    VStack(alignment: .leading, spacing: 10) {
+                        // Native Language
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Native Language")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                            Picker("", selection: $settings.nativeLanguage) {
+                                ForEach(["zh-CN", "zh-TW", "ja", "ko", "fr", "de", "es", "ru", "it", "pt"], id: \.self) { code in
+                                    Text(Locale.current.localizedString(forIdentifier: code) ?? code).tag(code)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                        }
+
+                        // Pause Threshold
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Pause Threshold")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(String(format: "%.1f", settings.pauseThreshold))s")
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Slider(
+                                value: $settings.pauseThreshold,
+                                in: 0.5...5.0,
+                                step: 0.5
+                            )
+                        }
+
+                        // Phonetic Source
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Phonetic Source")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                            Picker("", selection: $settings.phoneticSource) {
+                                ForEach(PhoneticSource.allCases) { source in
+                                    Text(source.label).tag(source)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+
             Spacer()
         }
         .padding(16)
