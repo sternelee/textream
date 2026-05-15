@@ -250,12 +250,10 @@ class PhoneticTooltipService {
         AIScriptService.shared.generatePhonetic(word: word, targetLanguage: targetLanguage) { result in
             switch result {
             case .success(let parsed):
-                // AI returns US IPA in parsed.ipa; check if AI also returned UK
-                let ukIPA = self.parseUKIPA(from: parsed.pronunciation)
                 let phoneticResult = PhoneticResult(
                     word: word,
                     phonetic: parsed.ipa,
-                    phoneticUK: ukIPA,
+                    phoneticUK: parsed.ukIPA,
                     translation: parsed.translation,
                     pronunciation: parsed.pronunciation
                 )
@@ -265,19 +263,5 @@ class PhoneticTooltipService {
                 completion(nil)
             }
         }
-    }
-    
-    /// Try to extract UK IPA from the AI pronunciation field
-    /// The AI prompt now asks for US:/UK: format; UK may end up in pronunciation as fallback
-    private func parseUKIPA(from content: String) -> String {
-        // Check if content contains UK: prefix
-        let lines = content.components(separatedBy: "\n")
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("UK:") {
-                return String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-            }
-        }
-        return ""
     }
 }

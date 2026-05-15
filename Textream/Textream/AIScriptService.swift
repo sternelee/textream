@@ -508,7 +508,7 @@ Questions:
     func generatePhonetic(
         word: String,
         targetLanguage: String,
-        onComplete: @escaping (Result<(ipa: String, translation: String, pronunciation: String), AIScriptError>) -> Void
+        onComplete: @escaping (Result<(ipa: String, ukIPA: String, translation: String, pronunciation: String), AIScriptError>) -> Void
     ) {
         let apiKey = NotchSettings.shared.openAIAPIKey
         guard !apiKey.isEmpty else {
@@ -595,7 +595,7 @@ PRONUNCIATION: <approximate guide using native sounds>
 
     /// Parse phonetic generation response into structured fields
     /// Handles both old format (IPA:) and new format (US:/UK:)
-    static func parsePhoneticResponse(_ content: String) -> (ipa: String, translation: String, pronunciation: String) {
+    static func parsePhoneticResponse(_ content: String) -> (ipa: String, ukIPA: String, translation: String, pronunciation: String) {
         var usIPA = ""
         var ukIPA = ""
         var ipa = ""
@@ -618,17 +618,13 @@ PRONUNCIATION: <approximate guide using native sounds>
             }
         }
 
-        // Combine US and UK IPA into single ipa field, separated by newline if both present
-        if !usIPA.isEmpty {
-            ipa = usIPA
-        }
+        if !usIPA.isEmpty { ipa = usIPA }
 
-        // Fallback: if nothing parsed, treat entire content as pronunciation guide
         if ipa.isEmpty && translation.isEmpty && pronunciation.isEmpty {
             pronunciation = content.trimmingCharacters(in: .whitespaces)
         }
 
-        return (ipa: ipa, translation: translation, pronunciation: pronunciation)
+        return (ipa: ipa, ukIPA: ukIPA, translation: translation, pronunciation: pronunciation)
     }
 
     /// Fetch available models from the remote API
