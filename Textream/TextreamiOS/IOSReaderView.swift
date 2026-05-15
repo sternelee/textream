@@ -376,7 +376,11 @@ struct IOSReaderView: View {
     private func teleprompterGrid(compact: Bool, maxTextWidth: CGFloat) -> some View {
         ZStack {
             ScrollView {
-                LazyVGrid(columns: teleprompterColumns(for: maxTextWidth), alignment: .leading, spacing: CGFloat((compact ? 10 : 12) * model.readerLineSpacing)) {
+                FlowLayout(
+                    horizontalSpacing: compact ? 8 : 10,
+                    verticalSpacing: CGFloat((compact ? 10 : 12) * model.readerLineSpacing),
+                    maxWidth: maxTextWidth
+                ) {
                     ForEach(Array(model.currentWords.enumerated()), id: \.offset) { index, word in
                         wordButton(word: word, index: index, compact: compact)
                     }
@@ -1073,6 +1077,7 @@ struct IOSReaderView: View {
         } label: {
             Text(word)
                 .font(.system(size: model.readerFontSize, weight: index == model.currentWordIndex ? .bold : .semibold, design: model.readerFontFamily.fontDesign))
+                .lineLimit(1)
                 .multilineTextAlignment(.leading)
                 .padding(.horizontal, compact ? 8 : 10)
                 .padding(.vertical, compact ? 7 : 8)
