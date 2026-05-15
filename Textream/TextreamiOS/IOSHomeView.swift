@@ -237,7 +237,7 @@ struct IOSHomeView: View {
                     }
                 }
 
-                ViewThatFits(in: .horizontal) {
+                ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         actionChip(title: "New", systemImage: "plus.square.on.square", action: confirmNewDocument)
                             .keyboardShortcut("n", modifiers: .command)
@@ -251,25 +251,6 @@ struct IOSHomeView: View {
                         }
                         actionChip(title: model.hasUnsavedChanges ? "Save*" : "Save", systemImage: "square.and.arrow.down", highlighted: model.hasUnsavedChanges, action: model.saveDocument)
                             .keyboardShortcut("s", modifiers: .command)
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 10) {
-                            actionChip(title: "New", systemImage: "plus.square.on.square", action: confirmNewDocument)
-                                .keyboardShortcut("n", modifiers: .command)
-                            actionChip(title: "Open", systemImage: "folder", action: { showingLibrary = true })
-                                .keyboardShortcut("o", modifiers: .command)
-                            actionChip(title: "AI", systemImage: "wand.and.stars", highlighted: true, action: { showingAIGenerate = true })
-                        }
-                        HStack(spacing: 10) {
-                            if model.document.hasAnyContent {
-                                actionChip(title: "Read", systemImage: "play.fill", highlighted: true, action: model.startReading)
-                                    .keyboardShortcut("r", modifiers: .command)
-                                actionChip(title: "Practice", systemImage: "mic", action: { showingPractice = true })
-                            }
-                            actionChip(title: model.hasUnsavedChanges ? "Save*" : "Save", systemImage: "square.and.arrow.down", highlighted: model.hasUnsavedChanges, action: model.saveDocument)
-                                .keyboardShortcut("s", modifiers: .command)
-                        }
                     }
                 }
 
@@ -447,7 +428,7 @@ struct IOSHomeView: View {
     private func editorCard(compact: Bool) -> some View {
         surfaceCard {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center) {
+                HStack(alignment: .center, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Script Title", text: $model.document.title)
                             .font(.headline)
@@ -465,130 +446,27 @@ struct IOSHomeView: View {
                             }
                         }
                     }
-                    if model.document.pages.count > 1 {
-                        HStack(spacing: 4) {
-                            compactPageButton(title: "Up", systemImage: "arrow.up", disabled: !model.document.hasPreviousPage) {
-                                model.moveCurrentPageUp()
-                            }
-                            compactPageButton(title: "Down", systemImage: "arrow.down", disabled: !model.document.hasNextPage) {
-                                model.moveCurrentPageDown()
-                            }
-                        }
-                    }
-                    Button {
-                        model.duplicateCurrentPage()
-                    } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    if model.document.hasAnyContent {
-                        Button {
-                            showingPractice = true
-                        } label: {
-                            Label("Practice", systemImage: "mic")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            showingPracticeHistory = true
-                        } label: {
-                            Label("History", systemImage: "clock.arrow.circlepath")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            showingPolish = true
-                        } label: {
-                            Label("Polish", systemImage: "sparkles")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            showingMockQA = true
-                        } label: {
-                            Label("Q&A", systemImage: "bubble.left.and.bubble.right")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            model.copyAllTextToClipboard()
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            model.exportDocument()
-                        } label: {
-                            Label("Export", systemImage: "square.and.arrow.up")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Button {
-                        model.pasteFromClipboard()
-                    } label: {
-                        Label("Paste", systemImage: "doc.on.clipboard")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    Button {
-                        showingDocumentPicker = true
-                    } label: {
-                        Label("Import", systemImage: "square.and.arrow.down")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    Button {
-                        showingFindReplace = true
-                    } label: {
-                        Label("Find", systemImage: "magnifyingglass")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut("f", modifiers: .command)
-                    if model.document.pages.count > 1 {
-                        Button(role: .destructive) {
-                            showingDeletePageConfirmation = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .layoutPriority(1)
+
+                    Spacer(minLength: 8)
+
+                    // Toolbar: compact icon-only buttons with overflow Menu
+                    editorToolbar(compact: compact)
                 }
 
                 tagRow()
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 10) {
-                        compactPageButton(title: "Prev", systemImage: "chevron.left", disabled: !model.document.hasPreviousPage) {
-                            model.goToPreviousPage()
-                        }
-                        compactPageButton(title: "Next", systemImage: "chevron.right", disabled: !model.document.hasNextPage) {
-                            model.goToNextPage()
-                        }
-                        Text(model.document.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Current page is empty" : "Current page will be used when Reader starts")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.58))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 10) {
+                    compactPageButton(title: "Prev", systemImage: "chevron.left", disabled: !model.document.hasPreviousPage) {
+                        model.goToPreviousPage()
                     }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 10) {
-                            compactPageButton(title: "Prev", systemImage: "chevron.left", disabled: !model.document.hasPreviousPage) {
-                                model.goToPreviousPage()
-                            }
-                            compactPageButton(title: "Next", systemImage: "chevron.right", disabled: !model.document.hasNextPage) {
-                                model.goToNextPage()
-                            }
-                        }
-                        Text(model.document.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Current page is empty" : "Current page will be used when Reader starts")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.58))
+                    compactPageButton(title: "Next", systemImage: "chevron.right", disabled: !model.document.hasNextPage) {
+                        model.goToNextPage()
                     }
+                    Text(model.document.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Current page is empty" : "Current page will be used when Reader starts")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.58))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 // Outline & Mini-map
@@ -865,6 +743,97 @@ struct IOSHomeView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Adaptive editor toolbar: icon-only on compact screens, icon+label on wide screens.
+    /// Groups AI/Practice features into a Menu to prevent overflow.
+    @ViewBuilder
+    private func editorToolbar(compact: Bool) -> some View {
+        if compact {
+            compactEditorToolbar()
+        } else {
+            wideEditorToolbar()
+        }
+    }
+
+    @ViewBuilder
+    private func wideEditorToolbar() -> some View {
+        HStack(spacing: 8) {
+            if model.document.pages.count > 1 {
+                toolbarIcon(systemImage: "arrow.up", disabled: !model.document.hasPreviousPage) {
+                    model.moveCurrentPageUp()
+                }
+                toolbarIcon(systemImage: "arrow.down", disabled: !model.document.hasNextPage) {
+                    model.moveCurrentPageDown()
+                }
+            }
+            toolbarIcon(systemImage: "doc.on.doc") { model.duplicateCurrentPage() }
+            if model.document.hasAnyContent {
+                toolbarIcon(systemImage: "mic") { showingPractice = true }
+                toolbarIcon(systemImage: "sparkles") { showingPolish = true }
+                toolbarIcon(systemImage: "bubble.left.and.bubble.right") { showingMockQA = true }
+                toolbarIcon(systemImage: "doc.on.doc") { model.copyAllTextToClipboard() }
+                toolbarIcon(systemImage: "square.and.arrow.up") { model.exportDocument() }
+            }
+            toolbarIcon(systemImage: "doc.on.clipboard") { model.pasteFromClipboard() }
+            toolbarIcon(systemImage: "square.and.arrow.down") { showingDocumentPicker = true }
+            toolbarIcon(systemImage: "magnifyingglass") { showingFindReplace = true }
+            if model.document.pages.count > 1 {
+                toolbarIcon(systemImage: "trash", destructive: true) { showingDeletePageConfirmation = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func compactEditorToolbar() -> some View {
+        HStack(spacing: 4) {
+            if model.document.pages.count > 1 {
+                toolbarIcon(systemImage: "arrow.up", disabled: !model.document.hasPreviousPage) {
+                    model.moveCurrentPageUp()
+                }
+                toolbarIcon(systemImage: "arrow.down", disabled: !model.document.hasNextPage) {
+                    model.moveCurrentPageDown()
+                }
+            }
+            toolbarIcon(systemImage: "doc.on.doc") { model.duplicateCurrentPage() }
+            if model.document.hasAnyContent {
+                Menu {
+                    Button { showingPractice = true } label: { Label("Practice", systemImage: "mic") }
+                    Button { showingPracticeHistory = true } label: { Label("History", systemImage: "clock.arrow.circlepath") }
+                    Button { showingPolish = true } label: { Label("Polish", systemImage: "sparkles") }
+                    Button { showingMockQA = true } label: { Label("Mock Q&A", systemImage: "bubble.left.and.bubble.right") }
+                    Divider()
+                    Button { model.copyAllTextToClipboard() } label: { Label("Copy All", systemImage: "doc.on.doc") }
+                    Button { model.exportDocument() } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Circle())
+                }
+            }
+            toolbarIcon(systemImage: "doc.on.clipboard") { model.pasteFromClipboard() }
+            toolbarIcon(systemImage: "square.and.arrow.down") { showingDocumentPicker = true }
+            toolbarIcon(systemImage: "magnifyingglass") { showingFindReplace = true }
+            if model.document.pages.count > 1 {
+                toolbarIcon(systemImage: "trash", destructive: true) { showingDeletePageConfirmation = true }
+            }
+        }
+    }
+
+    private func toolbarIcon(systemImage: String, disabled: Bool = false, destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(destructive ? .red : (disabled ? .white.opacity(0.35) : .white))
+                .frame(width: 30, height: 30)
+                .background(Color.white.opacity(disabled ? 0.03 : 0.08))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
     }
 
     private func compactPageButton(title: String, systemImage: String, disabled: Bool, action: @escaping () -> Void) -> some View {
