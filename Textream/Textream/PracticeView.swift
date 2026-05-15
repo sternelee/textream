@@ -138,6 +138,9 @@ struct PracticeView: View {
                 // Score card
                 scoreCard(session: session)
 
+                // Radar chart
+                radarChart(session: session)
+
                 // Stats grid
                 statsGrid(session: session)
 
@@ -334,6 +337,24 @@ struct PracticeView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.03))
         )
+    }
+
+    private func radarChart(session: PracticeSession) -> some View {
+        let wpmScore = min(100.0, max(0.0, 100.0 - abs(session.averageWPM - 140.0) / 140.0 * 100.0))
+        let pauseScore = min(100.0, max(0.0, 100.0 - Double(session.pauseCount) * 15.0))
+        let clarityScore = min(100.0, max(0.0, 100.0 - Double(session.fillerWordCount) * 10.0))
+        let timingScore = min(100.0, max(0.0, 100.0 - abs(session.duration - Double(session.scriptText.count) / 700.0) * 20.0))
+        let volumeScore = 75.0 // placeholder — would need actual audio analysis
+        
+        return RadarChartView(dimensions: [
+            RadarDimension(label: "Speed", value: wpmScore, icon: "speedometer"),
+            RadarDimension(label: "Pauses", value: pauseScore, icon: "pause.circle"),
+            RadarDimension(label: "Clarity", value: clarityScore, icon: "waveform"),
+            RadarDimension(label: "Timing", value: timingScore, icon: "clock"),
+            RadarDimension(label: "Volume", value: volumeScore, icon: "speaker.wave.2")
+        ])
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
     private func scoreColor(_ score: Int) -> Color {
