@@ -502,6 +502,121 @@ Questions:
         task.resume()
     }
 
+    // MARK: - Phonetic Generation
+
+    /// Generate phonetic hint for a difficult word (IPA + translation + pronunciation guide)
+    func generatePhonetic(
+        word: String,
+        targetLanguage: String,
+        onComplete: @escaping (Result<(ipa: String, translation: String, pronunciation: String), AIScriptError>) -> Void
+    ) {
+        let apiKey = NotchSettings.shared.openAIAPIKey
+        guard !apiKey.isEmpty else {
+            onComplete(.failure(.missingAPIKey))
+            return
+        }
+
+        let model = NotchSettings.shared.openAIModel
+        let baseURL = NotchSettings.shared.openAIBaseURL
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            onComplete(.failure(.invalidURL))
+            return
+        }
+
+        let nativeLangName = Locale(identifier: targetLanguage).localizedString(forLanguageCode: targetLanguage) ?? targetLanguage
+
+        let systemPrompt = """
+You are a pronunciation assistant. Given a word and a target language, provide:
+1. The IPA phonetic transcription
+2. The translation in the target language
+3. An approximate pronunciation guide using \(nativeLangName) sounds
+
+Respond ONLY in this exact format (no markdown, no extra text):
+IPA: <ipa transcription>
+TRANSLATION: <translation>
+PRONUNCIATION: <approximate guide>
+"""
+        let userPrompt = "Word: \"\(word)\"\nTarget language: \(nativeLangName) (\(targetLanguage))"
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ],
+            "stream": false,
+            "temperature": 0.3,
+            "max_tokens": 256
+        ]
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            onComplete(.failure(.decodingError))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = bodyData
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    onComplete(.failure(.networkError(error)))
+                    return
+                }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    onComplete(.failure(.networkError(NSError(domain: "", code: -1))))
+                    return
+                }
+                if httpResponse.statusCode != 200 {
+                    let message = Self.extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                    onComplete(.failure(.apiError(message)))
+                    return
+                }
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let choices = json["choices"] as? [[String: Any]],
+                      let first = choices.first,
+                      let message = first["message"] as? [String: Any],
+                      let content = message["content"] as? String else {
+                    onComplete(.failure(.decodingError))
+                    return
+                }
+                let parsed = Self.parsePhoneticResponse(content)
+                onComplete(.success(parsed))
+            }
+        }
+        task.resume()
+    }
+
+    /// Parse phonetic generation response into structured fields
+    static func parsePhoneticResponse(_ content: String) -> (ipa: String, translation: String, pronunciation: String) {
+        var ipa = ""
+        var translation = ""
+        var pronunciation = ""
+
+        let lines = content.split(separator: "\n")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("IPA:") {
+                ipa = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("TRANSLATION:") {
+                translation = String(trimmed.dropFirst(12)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("PRONUNCIATION:") {
+                pronunciation = String(trimmed.dropFirst(14)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+
+        // Fallback: if nothing parsed, treat entire content as pronunciation guide
+        if ipa.isEmpty && translation.isEmpty && pronunciation.isEmpty {
+            pronunciation = content.trimmingCharacters(in: .whitespaces)
+        }
+
+        return (ipa: ipa, translation: translation, pronunciation: pronunciation)
+    }
+
     /// Fetch available models from the remote API
     func fetchModels(completion: @escaping (Result<[String], AIScriptError>) -> Void) {
         let apiKey = NotchSettings.shared.openAIAPIKey

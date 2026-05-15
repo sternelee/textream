@@ -111,109 +111,21 @@ class PhoneticTooltipService {
     // MARK: - AI Generated
     
     private func fetchAIGenerated(word: String, targetLanguage: String, completion: @escaping (PhoneticResult?) -> Void) {
-        let apiKey = NotchSettings.shared.openAIAPIKey
-        guard !apiKey.isEmpty else {
-            completion(nil)
-            return
-        }
-        
-        let model = NotchSettings.shared.openAIModel
-        let baseURL = NotchSettings.shared.openAIBaseURL
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            completion(nil)
-            return
-        }
-        
-        let nativeLangName = nativeLanguageName(targetLanguage)
-        let systemPrompt = """
-You are a pronunciation assistant. Given a word and a target language, provide:
-1. The IPA phonetic transcription
-2. The translation in the target language
-3. An approximate pronunciation guide using \(nativeLangName) sounds
-
-Respond ONLY in this exact format (no markdown, no extra text):
-IPA: <ipa transcription>
-TRANSLATION: <translation>
-PRONUNCIATION: <approximate guide>
-"""
-        let userPrompt = "Word: \"\(word)\"\nTarget language: \(nativeLangName) (\(targetLanguage))"
-        
-        let body: [String: Any] = [
-            "model": model,
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": userPrompt]
-            ],
-            "stream": false,
-            "temperature": 0.3,
-            "max_tokens": 256
-        ]
-        
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
-            completion(nil)
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = bodyData
-        
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("Phonetic API error: \(error)")
-                    completion(nil)
-                    return
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200,
-                      let data = data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let choices = json["choices"] as? [[String: Any]],
-                      let first = choices.first,
-                      let message = first["message"] as? [String: Any],
-                      let content = message["content"] as? String else {
-                    completion(nil)
-                    return
-                }
-                
-                let result = self.parsePhoneticResponse(content: content, word: word)
-                completion(result)
+        AIScriptService.shared.generatePhonetic(word: word, targetLanguage: targetLanguage) { result in
+            switch result {
+            case .success(let parsed):
+                let phoneticResult = PhoneticResult(
+                    word: word,
+                    phonetic: parsed.ipa,
+                    translation: parsed.translation,
+                    pronunciation: parsed.pronunciation
+                )
+                completion(phoneticResult)
+            case .failure(let error):
+                print("Phonetic API error: \(error.localizedDescription)")
+                completion(nil)
             }
         }
-        task.resume()
-    }
-    
-    private func parsePhoneticResponse(content: String, word: String) -> PhoneticResult? {
-        var ipa = ""
-        var translation = ""
-        var pronunciation = ""
-        
-        let lines = content.split(separator: "\n")
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("IPA:") {
-                ipa = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
-            } else if trimmed.hasPrefix("TRANSLATION:") {
-                translation = String(trimmed.dropFirst(12)).trimmingCharacters(in: .whitespaces)
-            } else if trimmed.hasPrefix("PRONUNCIATION:") {
-                pronunciation = String(trimmed.dropFirst(14)).trimmingCharacters(in: .whitespaces)
-            }
-        }
-        
-        // If parsing failed, use the whole content as pronunciation
-        if ipa.isEmpty && translation.isEmpty && pronunciation.isEmpty {
-            pronunciation = content.trimmingCharacters(in: .whitespaces)
-        }
-        
-        return PhoneticResult(
-            word: word,
-            phonetic: ipa,
-            translation: translation,
-            pronunciation: pronunciation
-        )
     }
     
     private func nativeLanguageName(_ code: String) -> String {
