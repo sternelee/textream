@@ -6,31 +6,54 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct PhoneticTooltipView: View {
     let result: PhoneticResult
     let onDismiss: () -> Void
-    
+
     @State private var appeared = false
-    
-    private var hasAnyContent: Bool {
-        !result.phonetic.isEmpty || !result.phoneticUK.isEmpty || !result.translation.isEmpty || !result.pronunciation.isEmpty
+    @State private var loadingTimedOut = false
+    @State private var isSpeaking = false
+
+    private let synthesizer = AVSpeechSynthesizer()
+
+    private func speak() {
+        guard !result.word.isEmpty else { return }
+        synthesizer.stopSpeaking(at: .immediate)
+        let utterance = AVSpeechUtterance(string: result.word)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = 0.42          // slightly slower than default for clarity
+        utterance.pitchMultiplier = 1.0
+        isSpeaking = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            isSpeaking = false
+        }
+        synthesizer.speak(utterance)
     }
-    
+
+    private var hasAnyContent: Bool {
+        !result.phonetic.isEmpty || !result.phoneticUK.isEmpty ||
+        !result.translation.isEmpty || !result.pronunciation.isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Header with word
+            // Header
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                Button { speak() } label: {
+                    Image(systemName: isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isSpeaking ? Color.accentColor.opacity(0.6) : Color.accentColor)
+                        .symbolEffect(.variableColor.iterative, isActive: isSpeaking)
+                }
+                .buttonStyle(.plain)
+                .help("Pronounce word")
                 Text(result.word)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.primary)
                 Spacer()
-                Button {
-                    onDismiss()
-                } label: {
+                Button { onDismiss() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.secondary)
@@ -40,12 +63,11 @@ struct PhoneticTooltipView: View {
                 }
                 .buttonStyle(.plain)
             }
-            
-            Divider()
-                .background(Color.primary.opacity(0.1))
-            
+
+            Divider().background(Color.primary.opacity(0.1))
+
             if hasAnyContent {
-                // IPA — show US and UK variants
+                // IPA
                 if !result.phonetic.isEmpty || !result.phoneticUK.isEmpty {
                     VStack(alignment: .leading, spacing: 3) {
                         if !result.phonetic.isEmpty {
@@ -53,8 +75,7 @@ struct PhoneticTooltipView: View {
                                 Text("US")
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 3)
-                                    .padding(.vertical, 1)
+                                    .padding(.horizontal, 3).padding(.vertical, 1)
                                     .background(Color.red.opacity(0.12))
                                     .clipShape(RoundedRectangle(cornerRadius: 3))
                                 Text(result.phonetic)
@@ -62,13 +83,12 @@ struct PhoneticTooltipView: View {
                                     .foregroundStyle(.primary)
                             }
                         }
-                        if !result.phoneticUK.isEmpty && result.phoneticUK != result.phonetic {
+                        if !result.phoneticUK.isEmpty, result.phoneticUK != result.phonetic {
                             HStack(spacing: 4) {
                                 Text("UK")
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 3)
-                                    .padding(.vertical, 1)
+                                    .padding(.horizontal, 3).padding(.vertical, 1)
                                     .background(Color.blue.opacity(0.12))
                                     .clipShape(RoundedRectangle(cornerRadius: 3))
                                 Text(result.phoneticUK)
@@ -78,7 +98,7 @@ struct PhoneticTooltipView: View {
                         }
                     }
                 }
-                
+
                 // Translation
                 if !result.translation.isEmpty {
                     HStack(spacing: 4) {
@@ -90,7 +110,7 @@ struct PhoneticTooltipView: View {
                             .foregroundStyle(.primary)
                     }
                 }
-                
+
                 // Pronunciation guide
                 if !result.pronunciation.isEmpty {
                     HStack(alignment: .top, spacing: 4) {
@@ -102,11 +122,21 @@ struct PhoneticTooltipView: View {
                             .lineLimit(3)
                     }
                 }
-            } else {
-                // Loading state: data not yet available
+            } else if loadingTimedOut {
+                // No result after timeout — show message, never auto-dismiss
                 HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Text("No result")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } else {
+                // Still loading
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
                     Text("Looking up…")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -135,9 +165,20 @@ struct PhoneticTooltipView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 appeared = true
             }
-            // Auto-dismiss after 8 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-                onDismiss()
+            // Loading timeout: switch to "No result" after 6 s
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                if !hasAnyContent {
+                    loadingTimedOut = true
+                    // Do NOT auto-dismiss — user must close manually
+                }
+            }
+        }
+        // Auto-dismiss only when content is available
+        .onChange(of: hasAnyContent) { _, gotContent in
+            if gotContent {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
+                    onDismiss()
+                }
             }
         }
     }
