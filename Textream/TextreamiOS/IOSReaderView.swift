@@ -22,6 +22,7 @@ struct IOSReaderView: View {
     @State private var currentTimeString: String = ""
     @State private var showingJumpToPage = false
     @State private var jumpToPageText = ""
+    @State private var showingPractice = false
     private let tickTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -87,6 +88,9 @@ struct IOSReaderView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingPractice) {
+            PracticeView(scriptText: model.document.pages.joined(separator: "\n\n"))
         }
     }
 
@@ -901,6 +905,22 @@ struct IOSReaderView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
                             Text("Full Screen")
+                                .font(.caption.weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        showingPractice = true
+                        withAnimation(.spring()) { showQuickSettings = false }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "mic")
+                            Text("Practice")
                                 .font(.caption.weight(.bold))
                         }
                         .foregroundStyle(.white)

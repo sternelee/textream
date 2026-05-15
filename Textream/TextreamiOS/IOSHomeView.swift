@@ -14,6 +14,10 @@ struct IOSHomeView: View {
     @State private var autoSaveTimer: Timer?
     @State private var newTagText = ""
     @State private var showingAddTag = false
+    @State private var showingPractice = false
+    @State private var showingPracticeHistory = false
+    @State private var showingPolish = false
+    @State private var showingMockQA = false
 
     var body: some View {
         NavigationStack {
@@ -67,6 +71,20 @@ struct IOSHomeView: View {
             }
             .sheet(isPresented: $showingAIGenerate) {
                 AIGenerateView(model: model)
+            }
+            .sheet(isPresented: $showingPractice) {
+                PracticeView(scriptText: model.document.pages.joined(separator: "\n\n"))
+            }
+            .sheet(isPresented: $showingPracticeHistory) {
+                PracticeHistoryView()
+            }
+            .sheet(isPresented: $showingPolish) {
+                AIPolishView(selectedText: model.document.currentPageText) { polished in
+                    model.updateCurrentPageText(polished)
+                }
+            }
+            .sheet(isPresented: $showingMockQA) {
+                MockQAView(scriptText: model.document.pages.joined(separator: "\n\n"))
             }
             .sheet(isPresented: $showingFindReplace) {
                 FindReplaceSheet(model: model)
@@ -229,6 +247,7 @@ struct IOSHomeView: View {
                         if model.document.hasAnyContent {
                             actionChip(title: "Read", systemImage: "play.fill", highlighted: true, action: model.startReading)
                                 .keyboardShortcut("r", modifiers: .command)
+                            actionChip(title: "Practice", systemImage: "mic", action: { showingPractice = true })
                         }
                         actionChip(title: model.hasUnsavedChanges ? "Save*" : "Save", systemImage: "square.and.arrow.down", highlighted: model.hasUnsavedChanges, action: model.saveDocument)
                             .keyboardShortcut("s", modifiers: .command)
@@ -246,6 +265,7 @@ struct IOSHomeView: View {
                             if model.document.hasAnyContent {
                                 actionChip(title: "Read", systemImage: "play.fill", highlighted: true, action: model.startReading)
                                     .keyboardShortcut("r", modifiers: .command)
+                                actionChip(title: "Practice", systemImage: "mic", action: { showingPractice = true })
                             }
                             actionChip(title: model.hasUnsavedChanges ? "Save*" : "Save", systemImage: "square.and.arrow.down", highlighted: model.hasUnsavedChanges, action: model.saveDocument)
                                 .keyboardShortcut("s", modifiers: .command)
@@ -465,6 +485,34 @@ struct IOSHomeView: View {
                     Spacer()
                     if model.document.hasAnyContent {
                         Button {
+                            showingPractice = true
+                        } label: {
+                            Label("Practice", systemImage: "mic")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            showingPracticeHistory = true
+                        } label: {
+                            Label("History", systemImage: "clock.arrow.circlepath")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            showingPolish = true
+                        } label: {
+                            Label("Polish", systemImage: "sparkles")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            showingMockQA = true
+                        } label: {
+                            Label("Q&A", systemImage: "bubble.left.and.bubble.right")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
                             model.copyAllTextToClipboard()
                         } label: {
                             Label("Copy", systemImage: "doc.on.doc")
@@ -540,6 +588,24 @@ struct IOSHomeView: View {
                         Text(model.document.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Current page is empty" : "Current page will be used when Reader starts")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.58))
+                    }
+                }
+
+                // Outline & Mini-map
+                if !model.document.currentPageText.isEmpty {
+                    VStack(spacing: 10) {
+                        ScriptOutlineView(
+                            text: model.document.currentPageText,
+                            currentCharOffset: 0
+                        ) { offset in
+                            // Jump to character offset in text editor
+                            // Note: iOS TextEditor doesn't support programmatic selection,
+                            // so we display the outline for visual reference
+                        }
+                        ScriptMiniMapView(
+                            text: model.document.currentPageText,
+                            currentCharOffset: 0
+                        )
                     }
                 }
 
