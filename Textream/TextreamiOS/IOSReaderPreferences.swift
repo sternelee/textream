@@ -161,6 +161,8 @@ struct IOSPersistedReaderSettings: Codable, Equatable {
     var hapticEnabled: Bool = true
     var mirrorModeEnabled: Bool = false
     var forceDarkMode: Bool = true
+    var phoneticTooltipEnabled: Bool = true
+    var nativeLanguage: String = "zh"
 }
 
 struct IOSDraftState: Codable, Equatable {

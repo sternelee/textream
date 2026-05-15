@@ -23,6 +23,8 @@ struct IOSReaderView: View {
     @State private var showingJumpToPage = false
     @State private var jumpToPageText = ""
     @State private var showingPractice = false
+    @State private var showPhoneticTooltip = false
+    @State private var selectedWordForLookup: String? = nil
     private let tickTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -60,7 +62,9 @@ struct IOSReaderView: View {
                         }
                     }
                     .onChange(of: model.document.currentPageIndex) { _, _ in
-                        showPageTransitionToast("Page \(model.document.currentPageIndex + 1) of \(model.document.pages.count)")
+                        let currentPage = model.document.currentPageIndex + 1
+                        let totalPages = model.document.pages.count
+                        showPageTransitionToast("Page \(currentPage) of \(totalPages)")
                     }
                     .onChange(of: model.scrollSpeedWordsPerSecond) { _, newValue in
                         showSpeedIndicator("\(String(format: "%.1f", newValue)) w/s")
@@ -91,6 +95,11 @@ struct IOSReaderView: View {
         }
         .sheet(isPresented: $showingPractice) {
             PracticeView(scriptText: model.document.pages.joined(separator: "\n\n"))
+        }
+        .sheet(isPresented: $showPhoneticTooltip) {
+            if let word = selectedWordForLookup {
+                PhoneticTooltipView(word: word, nativeLanguage: model.nativeLanguage)
+            }
         }
     }
 
@@ -1025,6 +1034,14 @@ struct IOSReaderView: View {
                 model.speakWord(word)
             } label: {
                 Label("Speak", systemImage: "speaker.wave.2")
+            }
+            if model.phoneticTooltipEnabled {
+                Button {
+                    selectedWordForLookup = word
+                    showPhoneticTooltip = true
+                } label: {
+                    Label("Lookup", systemImage: "text.magnifyingglass")
+                }
             }
         }
     }

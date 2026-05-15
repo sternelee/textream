@@ -149,6 +149,24 @@ struct IOSSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Phonetic Lookup") {
+                    Toggle("Enable lookup", isOn: $model.phoneticTooltipEnabled)
+                    Picker("Native language", selection: $model.nativeLanguage) {
+                        Text("中文").tag("zh")
+                        Text("日本語").tag("ja")
+                        Text("Español").tag("es")
+                        Text("Français").tag("fr")
+                        Text("Deutsch").tag("de")
+                        Text("한국어").tag("ko")
+                        Text("Italiano").tag("it")
+                        Text("Português").tag("pt")
+                        Text("Русский").tag("ru")
+                    }
+                    Text("Long-press any word in Reader to see phonetic transcription and translation.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section {
                     Button {
                         exportSettingsToClipboard()
@@ -292,7 +310,9 @@ struct IOSSettingsView: View {
             keepScreenAwake: model.keepScreenAwakeWhileReading,
             hapticEnabled: model.hapticEnabled,
             mirrorModeEnabled: model.mirrorModeEnabled,
-            forceDarkMode: model.forceDarkMode
+            forceDarkMode: model.forceDarkMode,
+            phoneticTooltipEnabled: model.phoneticTooltipEnabled,
+            nativeLanguage: model.nativeLanguage
         )
         do {
             let data = try JSONEncoder().encode(settings)
@@ -326,6 +346,8 @@ struct IOSSettingsView: View {
             model.hapticEnabled = settings.hapticEnabled
             model.mirrorModeEnabled = settings.mirrorModeEnabled
             model.forceDarkMode = settings.forceDarkMode
+            model.phoneticTooltipEnabled = settings.phoneticTooltipEnabled
+            model.nativeLanguage = settings.nativeLanguage
             settingsImportMessage = "Imported settings successfully."
         } catch {
             settingsImportMessage = "Invalid settings JSON: \(error.localizedDescription)"
