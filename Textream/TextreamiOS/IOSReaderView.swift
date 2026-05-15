@@ -1073,7 +1073,6 @@ struct IOSReaderView: View {
         } label: {
             Text(word)
                 .font(.system(size: model.readerFontSize, weight: index == model.currentWordIndex ? .bold : .semibold, design: model.readerFontFamily.fontDesign))
-                .lineLimit(1)
                 .multilineTextAlignment(.leading)
                 .padding(.horizontal, compact ? 8 : 10)
                 .padding(.vertical, compact ? 7 : 8)
