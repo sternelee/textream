@@ -646,6 +646,23 @@ Happy presenting! [wave]
             } else {
                 isTextFocused = true
             }
+            // Check for saved reading progress
+            checkForSavedProgress()
+        }
+        .sheet(isPresented: $showResumePrompt) {
+            if let progress = pendingResumeProgress {
+                ResumePromptView(progress: progress) { action in
+                    showResumePrompt = false
+                    switch action {
+                    case .resume:
+                        service.resumeReading(from: progress)
+                        isRunning = true
+                    case .restart:
+                        ReadingProgressStore.shared.clear()
+                    }
+                    pendingResumeProgress = nil
+                }
+            }
         }
     }
 
@@ -791,6 +808,22 @@ Happy presenting! [wave]
     }
 
     @State private var isImporting = false
+    @State private var showResumePrompt = false
+    @State private var pendingResumeProgress: ReadingProgress?
+
+    private func checkForSavedProgress() {
+        guard let progress = ReadingProgressStore.shared.matchingProgress(
+            fileURL: service.currentFileURL,
+            pages: service.pages
+        ) else { return }
+        // Only prompt if progress is not at the very beginning
+        guard progress.pageIndex > 0 || progress.charOffset > 30 else {
+            ReadingProgressStore.shared.clear()
+            return
+        }
+        pendingResumeProgress = progress
+        showResumePrompt = true
+    }
 
     private func handlePresentationDrop(url: URL) {
         guard service.confirmDiscardIfNeeded() else { return }
