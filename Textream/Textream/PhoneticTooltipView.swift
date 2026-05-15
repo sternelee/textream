@@ -40,16 +40,37 @@ struct PhoneticTooltipView: View {
             Divider()
                 .background(Color.primary.opacity(0.1))
             
-            // IPA
-            if !result.phonetic.isEmpty {
-                HStack(spacing: 4) {
-                    Text("IPA")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                    Text(result.phonetic)
-                        .font(.system(size: 14, weight: .medium, design: .serif))
-                        .foregroundStyle(.primary)
+            // IPA — show US and UK variants
+            if !result.phonetic.isEmpty || !result.phoneticUK.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    if !result.phonetic.isEmpty {
+                        HStack(spacing: 4) {
+                            Text("US")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(Color.red.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            Text(result.phonetic)
+                                .font(.system(size: 14, weight: .medium, design: .serif))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    if !result.phoneticUK.isEmpty && result.phoneticUK != result.phonetic {
+                        HStack(spacing: 4) {
+                            Text("UK")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(Color.blue.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            Text(result.phoneticUK)
+                                .font(.system(size: 14, weight: .medium, design: .serif))
+                                .foregroundStyle(.primary)
+                        }
+                    }
                 }
             }
             
@@ -78,7 +99,7 @@ struct PhoneticTooltipView: View {
             }
         }
         .padding(12)
-        .frame(width: 260)
+        .frame(width: 280)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
@@ -98,8 +119,8 @@ struct PhoneticTooltipView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 appeared = true
             }
-            // Auto-dismiss after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            // Auto-dismiss after 8 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
                 onDismiss()
             }
         }

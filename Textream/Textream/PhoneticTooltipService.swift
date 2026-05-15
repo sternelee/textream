@@ -1,17 +1,16 @@
 //
-//  PhoneticTooltipService.swift
+//  PhoneticTooltipView.swift
 //  Textream
 //
-//  Generates phonetic hints and translations for difficult words.
-//  Supports Apple Native Translation and AI-generated phonetics.
+//  Floating tooltip showing phonetic hint for a difficult word.
 //
 
-import Foundation
-import AVFoundation
+import SwiftUI
 
 struct PhoneticResult {
     let word: String
-    let phonetic: String      // IPA or phonetic spelling
+    let phonetic: String       // IPA (US variant, or general)
+    let phoneticUK: String     // IPA (UK variant)
     let translation: String   // Native language translation
     let pronunciation: String // Approximate pronunciation guide
 }
@@ -21,7 +20,7 @@ class PhoneticTooltipService {
     static let shared = PhoneticTooltipService()
     
     private var cache: [String: PhoneticResult] = [:]
-    private var pendingRequests = Set<String>()
+    private var pendingRequests: Set<String> = Set<String>()
     
     /// Called when a new difficult word is detected
     var onResult: ((PhoneticResult?) -> Void)?
@@ -40,36 +39,52 @@ class PhoneticTooltipService {
             return
         }
         
+        // Check local IPA dictionary first for instant response
+        let localIPA = getIPAPhonetic(for: word)
+        if !localIPA.us.isEmpty || !localIPA.uk.isEmpty {
+            let localResult = PhoneticResult(
+                word: word,
+                phonetic: localIPA.us,
+                phoneticUK: localIPA.uk,
+                translation: "",
+                pronunciation: ""
+            )
+            cache[key] = localResult
+            DispatchQueue.main.async {
+                self.onResult?(localResult)
+            }
+            // Still fetch AI for full data (translation + pronunciation)
+            // but user sees IPA instantly
+        }
+        
         // Avoid duplicate requests
         guard !pendingRequests.contains(key) else { return }
         pendingRequests.insert(key)
         
         let settings = NotchSettings.shared
+        let targetLanguage = settings.nativeLanguage
         
-        switch settings.phoneticSource {
-        case .appleNative:
-            fetchAppleNative(word: word, targetLanguage: settings.nativeLanguage) { [weak self] result in
-                self?.pendingRequests.remove(key)
-                guard let result = result, let self else {
-                    self?.onResult?(nil)
-                    return
-                }
-                self.cache[key] = result
-                DispatchQueue.main.async {
-                    self.onResult?(result)
-                }
+        // Always use AI for complete data (translation + pronunciation)
+        fetchAIGenerated(word: word, targetLanguage: targetLanguage) { [weak self] result in
+            self?.pendingRequests.remove(key)
+            guard let result = result, let self else {
+                self?.onResult?(nil)
+                return
             }
-        case .aiGenerated:
-            fetchAIGenerated(word: word, targetLanguage: settings.nativeLanguage) { [weak self] result in
-                self?.pendingRequests.remove(key)
-                guard let result = result, let self else {
-                    self?.onResult?(nil)
-                    return
-                }
-                self.cache[key] = result
-                DispatchQueue.main.async {
-                    self.onResult?(result)
-                }
+            // Merge: prefer AI data, but keep local IPA if AI returns empty
+            var finalResult = result
+            if finalResult.phonetic.isEmpty && !localIPA.us.isEmpty {
+                finalResult = PhoneticResult(
+                    word: result.word,
+                    phonetic: localIPA.us,
+                    phoneticUK: localIPA.uk.isEmpty ? result.phoneticUK : localIPA.uk,
+                    translation: result.translation,
+                    pronunciation: result.pronunciation
+                )
+            }
+            self.cache[key] = finalResult
+            DispatchQueue.main.async {
+                self.onResult?(finalResult)
             }
         }
     }
@@ -81,73 +96,152 @@ class PhoneticTooltipService {
     
     private func cacheKey(word: String) -> String {
         let lang = NotchSettings.shared.nativeLanguage
-        let source = NotchSettings.shared.phoneticSource.rawValue
-        return "\(source)_\(lang)_\(word.lowercased())"
+        return "phonetic_\(lang)_\(word.lowercased())"
     }
     
-    // MARK: - Apple Native (Translation + local IPA lookup)
+    // MARK: - Local IPA Dictionary
     
-    private func fetchAppleNative(word: String, targetLanguage: String, completion: @escaping (PhoneticResult?) -> Void) {
-        if #available(macOS 15.0, *) {
-            translateWithApple(word: word, targetLanguage: targetLanguage, completion: completion)
-        } else {
-            // Fallback to AI on older macOS
-            fetchAIGenerated(word: word, targetLanguage: targetLanguage, completion: completion)
-        }
+    private struct IPALookup {
+        let us: String   // American English IPA
+        let uk: String   // British English IPA
     }
     
-    @available(macOS 15.0, *)
-    private func translateWithApple(word: String, targetLanguage: String, completion: @escaping (PhoneticResult?) -> Void) {
-        // Translation framework requires SwiftUI .translationTask modifier for proper session management.
-        // Since PhoneticTooltipService operates outside a SwiftUI view context, we cannot
-        // reliably use TranslationSession here. Fall back to AI which provides
-        // IPA + translation + pronunciation guide in a single call.
-        fetchAIGenerated(word: word, targetLanguage: targetLanguage, completion: completion)
-    }
-    
-    // MARK: - IPA Phonetic Generation (local lookup)
-    
-    /// Common English word → IPA mapping for immediate results without API calls
-    private let commonIPA: [String: String] = [
-        "the": "/ðə/", "a": "/ə/", "an": "/ən/", "and": "/ænd/", "or": "/ɔːr/",
-        "of": "/ʌv/", "to": "/tuː/", "in": "/ɪn/", "for": "/fɔːr/", "with": "/wɪð/",
-        "is": "/ɪz/", "it": "/ɪt/", "that": "/ðæt/", "this": "/ðɪs/", "are": "/ɑːr/",
-        "was": "/wɒz/", "on": "/ɒn/", "have": "/hæv/", "from": "/frɒm/", "we": "/wiː/",
-        "be": "/biː/", "at": "/æt/", "one": "/wʌn/", "all": "/ɔːl/", "would": "/wʊd/",
-        "there": "/ðeər/", "their": "/ðeər/", "what": "/wɒt/", "so": "/səʊ/",
-        "up": "/ʌp/", "out": "/aʊt/", "about": "/əˈbaʊt/", "who": "/huː/",
-        "which": "/wɪtʃ/", "when": "/wen/", "can": "/kæn/", "will": "/wɪl/",
-        "other": "/ˈʌðər/", "into": "/ˈɪntuː/", "could": "/kʊd/", "time": "/taɪm/",
-        "very": "/ˈveri/", "just": "/dʒʌst/", "than": "/ðæn/", "know": "/nəʊ/",
-        "some": "/sʌm/", "people": "/ˈpiːpəl/", "through": "/θruː/",
-        "between": "/bɪˈtwiːn/", "world": "/wɜːrld/", "also": "/ˈɔːlsəʊ/",
-        "because": "/bɪˈkɒz/", "should": "/ʃʊd/", "these": "/ðiːz/",
-        "important": "/ɪmˈpɔːrtənt/", "different": "/ˈdɪfrənt/",
-        "understand": "/ˌʌndərˈstænd/", "experience": "/ɪkˈspɪriəns/",
-        "opportunity": "/ˌɒpərˈtjuːnɪti/", "development": "/dɪˈveləpmənt/",
-        "environment": "/ɪnˈvaɪrənmənt/", "knowledge": "/ˈnɒlɪdʒ/",
-        "technology": "/tekˈnɒlədʒi/", "communication": "/kəˌmjuːnɪˈkeɪʃən/",
-        "application": "/ˌæplɪˈkeɪʃən/", "information": "/ˌɪnfərˈmeɪʃən/",
-        "education": "/ˌedʒuˈkeɪʃən/", "organization": "/ˌɔːrɡənaɪˈzeɪʃən/",
-        "government": "/ˈɡʌvərnmənt/", "international": "/ˌɪntərˈnæʃənəl/",
-        "performance": "/pərˈfɔːrməns/", "management": "/ˈmænɪdʒmənt/",
-        "community": "/kəˈmjuːnɪti/", "accomplish": "/əˈkɒmplɪʃ/",
-        "consequence": "/ˈkɒnsɪkwəns/", "significant": "/sɪɡˈnɪfɪkənt/",
-        "entrepreneur": "/ˌɒntrəprəˈnɜːr/", "miscellaneous": "/ˌmɪsəˈleɪniəs/",
-        "necessary": "/ˈnesəseri/", "immediately": "/ɪˈmiːdiətli/",
-        "definitely": "/ˈdefɪnɪtli/", "separate": "/ˈseprət/",
-        "occurred": "/əˈkɜːrd/", "existence": "/ɪɡˈzɪstəns/",
+    private let commonIPA: [String: IPALookup] = [
+        // High-frequency function words
+        "the": IPALookup(us: "/ðə/", uk: "/ðə/"),
+        "a": IPALookup(us: "/ə/", uk: "/ə/"),
+        "an": IPALookup(us: "/ən/", uk: "/ən/"),
+        "and": IPALookup(us: "/ænd/", uk: "/ænd/"),
+        "or": IPALookup(us: "/ɔːr/", uk: "/ɔː/"),
+        "of": IPALookup(us: "/ʌv/", uk: "/ɒv/"),
+        "to": IPALookup(us: "/tuː/", uk: "/tuː/"),
+        "in": IPALookup(us: "/ɪn/", uk: "/ɪn/"),
+        "for": IPALookup(us: "/fɔːr/", uk: "/fɔː/"),
+        "with": IPALookup(us: "/wɪð/", uk: "/wɪð/"),
+        "is": IPALookup(us: "/ɪz/", uk: "/ɪz/"),
+        "it": IPALookup(us: "/ɪt/", uk: "/ɪt/"),
+        "that": IPALookup(us: "/ðæt/", uk: "/ðæt/"),
+        "this": IPALookup(us: "/ðɪs/", uk: "/ðɪs/"),
+        "are": IPALookup(us: "/ɑːr/", uk: "/ɑː/"),
+        "was": IPALookup(us: "/wɒz/", uk: "/wɒz/"),
+        "on": IPALookup(us: "/ɒn/", uk: "/ɒn/"),
+        "have": IPALookup(us: "/hæv/", uk: "/hæv/"),
+        "from": IPALookup(us: "/frɒm/", uk: "/frɒm/"),
+        "we": IPALookup(us: "/wiː/", uk: "/wiː/"),
+        "be": IPALookup(us: "/biː/", uk: "/biː/"),
+        "at": IPALookup(us: "/æt/", uk: "/æt/"),
+        "one": IPALookup(us: "/wʌn/", uk: "/wʌn/"),
+        "all": IPALookup(us: "/ɔːl/", uk: "/ɔːl/"),
+        "would": IPALookup(us: "/wʊd/", uk: "/wʊd/"),
+        "there": IPALookup(us: "/ðeər/", uk: "/ðeə/"),
+        "their": IPALookup(us: "/ðeər/", uk: "/ðeə/"),
+        "what": IPALookup(us: "/wɒt/", uk: "/wɒt/"),
+        "so": IPALookup(us: "/səʊ/", uk: "/səʊ/"),
+        "up": IPALookup(us: "/ʌp/", uk: "/ʌp/"),
+        "out": IPALookup(us: "/aʊt/", uk: "/aʊt/"),
+        "about": IPALookup(us: "/əˈbaʊt/", uk: "/əˈbaʊt/"),
+        "who": IPALookup(us: "/huː/", uk: "/huː/"),
+        "which": IPALookup(us: "/wɪtʃ/", uk: "/wɪtʃ/"),
+        "when": IPALookup(us: "/wen/", uk: "/wen/"),
+        "can": IPALookup(us: "/kæn/", uk: "/kæn/"),
+        "will": IPALookup(us: "/wɪl/", uk: "/wɪl/"),
+        "other": IPALookup(us: "/ˈʌðər/", uk: "/ˈʌðə/"),
+        "into": IPALookup(us: "/ˈɪntuː/", uk: "/ˈɪntuː/"),
+        "could": IPALookup(us: "/kʊd/", uk: "/kʊd/"),
+        "time": IPALookup(us: "/taɪm/", uk: "/taɪm/"),
+        "very": IPALookup(us: "/ˈveri/", uk: "/ˈveri/"),
+        "just": IPALookup(us: "/dʒʌst/", uk: "/dʒʌst/"),
+        "than": IPALookup(us: "/ðæn/", uk: "/ðæn/"),
+        "know": IPALookup(us: "/nəʊ/", uk: "/nəʊ/"),
+        "some": IPALookup(us: "/sʌm/", uk: "/sʌm/"),
+        "should": IPALookup(us: "/ʃʊd/", uk: "/ʃʊd/"),
+        "these": IPALookup(us: "/ðiːz/", uk: "/ðiːz/"),
+        
+        // Difficult / commonly mispronounced words
+        "annotate": IPALookup(us: "/ˈænəˌteɪt/", uk: "/ˈænəteɪt/"),
+        "entrepreneur": IPALookup(us: "/ˌɒntrəprəˈnɜːr/", uk: "/ˌɒntrəprəˈnɜː/"),
+        "miscellaneous": IPALookup(us: "/ˌmɪsəˈleɪniəs/", uk: "/ˌmɪsəˈleɪniəs/"),
+        "necessary": IPALookup(us: "/ˈnesəseri/", uk: "/ˈnesəsəri/"),
+        "immediately": IPALookup(us: "/ɪˈmiːdiətli/", uk: "/ɪˈmiːdiətli/"),
+        "definitely": IPALookup(us: "/ˈdefɪnɪtli/", uk: "/ˈdefɪnɪtli/"),
+        "separate": IPALookup(us: "/ˈseprət/", uk: "/ˈsepərət/"),
+        "occurred": IPALookup(us: "/əˈkɜːrd/", uk: "/əˈkɜːd/"),
+        "existence": IPALookup(us: "/ɪɡˈzɪstəns/", uk: "/ɪɡˈzɪstəns/"),
+        "important": IPALookup(us: "/ɪmˈpɔːrtənt/", uk: "/ɪmˈpɔːtənt/"),
+        "different": IPALookup(us: "/ˈdɪfrənt/", uk: "/ˈdɪfrənt/"),
+        "understand": IPALookup(us: "/ˌʌndərˈstænd/", uk: "/ˌʌndəˈstænd/"),
+        "experience": IPALookup(us: "/ɪkˈspɪriəns/", uk: "/ɪkˈspɪəriəns/"),
+        "opportunity": IPALookup(us: "/ˌɒpərˈtjuːnɪti/", uk: "/ˌɒpəˈtjuːnɪti/"),
+        "development": IPALookup(us: "/dɪˈveləpmənt/", uk: "/dɪˈveləpmənt/"),
+        "environment": IPALookup(us: "/ɪnˈvaɪrənmənt/", uk: "/ɪnˈvaɪrənmənt/"),
+        "knowledge": IPALookup(us: "/ˈnɒlɪdʒ/", uk: "/ˈnɒlɪdʒ/"),
+        "technology": IPALookup(us: "/tekˈnɒlədʒi/", uk: "/tekˈnɒlədʒi/"),
+        "communication": IPALookup(us: "/kəˌmjuːnɪˈkeɪʃən/", uk: "/kəˌmjuːnɪˈkeɪʃən/"),
+        "application": IPALookup(us: "/ˌæplɪˈkeɪʃən/", uk: "/ˌæplɪˈkeɪʃən/"),
+        "information": IPALookup(us: "/ˌɪnfərˈmeɪʃən/", uk: "/ˌɪnfəˈmeɪʃən/"),
+        "education": IPALookup(us: "/ˌedʒuˈkeɪʃən/", uk: "/ˌedʒʊˈkeɪʃən/"),
+        "organization": IPALookup(us: "/ˌɔːrɡənaɪˈzeɪʃən/", uk: "/ˌɔːɡənaɪˈzeɪʃən/"),
+        "government": IPALookup(us: "/ˈɡʌvərnmənt/", uk: "/ˈɡʌvənmənt/"),
+        "international": IPALookup(us: "/ˌɪntərˈnæʃənəl/", uk: "/ˌɪntəˈnæʃənəl/"),
+        "performance": IPALookup(us: "/pərˈfɔːrməns/", uk: "/pəˈfɔːməns/"),
+        "management": IPALookup(us: "/ˈmænɪdʒmənt/", uk: "/ˈmænɪdʒmənt/"),
+        "community": IPALookup(us: "/kəˈmjuːnɪti/", uk: "/kəˈmjuːnɪti/"),
+        "accomplish": IPALookup(us: "/əˈkɒmplɪʃ/", uk: "/əˈkɒmplɪʃ/"),
+        "consequence": IPALookup(us: "/ˈkɒnsɪkwəns/", uk: "/ˈkɒnsɪkwəns/"),
+        "significant": IPALookup(us: "/sɪɡˈnɪfɪkənt/", uk: "/sɪɡˈnɪfɪkənt/"),
+        "people": IPALookup(us: "/ˈpiːpəl/", uk: "/ˈpiːpəl/"),
+        "through": IPALookup(us: "/θruː/", uk: "/θruː/"),
+        "between": IPALookup(us: "/bɪˈtwiːn/", uk: "/bɪˈtwiːn/"),
+        "world": IPALookup(us: "/wɜːrld/", uk: "/wɜːld/"),
+        "also": IPALookup(us: "/ˈɔːlsəʊ/", uk: "/ˈɔːlsəʊ/"),
+        "because": IPALookup(us: "/bɪˈkɒz/", uk: "/bɪˈkɒz/"),
+        "presentation": IPALookup(us: "/ˌprɛzənˈteɪʃən/", uk: "/ˌprɛzənˈteɪʃən/"),
+        "specifically": IPALookup(us: "/spəˈsɪfɪkli/", uk: "/spəˈsɪfɪkli/"),
+        "acknowledge": IPALookup(us: "/əkˈnɒlɪdʒ/", uk: "/əkˈnɒlɪdʒ/"),
+        "question": IPALookup(us: "/ˈkwɛstʃən/", uk: "/ˈkwɛstʃən/"),
+        "determine": IPALookup(us: "/dɪˈtɜːrmɪn/", uk: "/dɪˈtɜːmɪn/"),
+        "recognize": IPALookup(us: "/ˈrekəɡnaɪz/", uk: "/ˈrekəɡnaɪz/"),
+        "particular": IPALookup(us: "/pərˈtɪkjʊlər/", uk: "/pəˈtɪkjʊlə/"),
+        "category": IPALookup(us: "/ˈkætəɡɔːri/", uk: "/ˈkætəɡəri/"),
+        "ensure": IPALookup(us: "/ɪnˈʃʊr/", uk: "/ɪnˈʃʊə/"),
+        "examine": IPALookup(us: "/ɪɡˈzæmɪn/", uk: "/ɪɡˈzæmɪn/"),
+        "achieve": IPALookup(us: "/əˈtʃiːv/", uk: "/əˈtʃiːv/"),
+        "recommend": IPALookup(us: "/ˌrekəˈmend/", uk: "/ˌrekəˈmend/"),
+        "perspective": IPALookup(us: "/pərˈspektɪv/", uk: "/pəˈspektɪv/"),
+        "advantage": IPALookup(us: "/ədˈvɒntɪdʒ/", uk: "/ədˈvɑːntɪdʒ/"),
+        "fundamental": IPALookup(us: "/ˌfʌndəˈmentəl/", uk: "/ˌfʌndəˈmentəl/"),
+        "however": IPALookup(us: "/haʊˈevər/", uk: "/haʊˈevə/"),
+        "obviously": IPALookup(us: "/ˈɒbviəsli/", uk: "/ˈɒbviəsli/"),
+        "innovation": IPALookup(us: "/ˌɪnəˈveɪʃən/", uk: "/ˌɪnəˈveɪʃən/"),
+        "implement": IPALookup(us: "/ˈɪmplɪment/", uk: "/ˈɪmplɪment/"),
+        "comprehensive": IPALookup(us: "/ˌkɒmprɪˈhensɪv/", uk: "/ˌkɒmprɪˈhensɪv/"),
+        "absolutely": IPALookup(us: "/ˌæbsəˈluːtli/", uk: "/ˌæbsəˈluːtli/"),
+        "appropriate": IPALookup(us: "/əˈprəʊpriət/", uk: "/əˈprəʊpriət/"),
+        "conscious": IPALookup(us: "/ˈkɒnʃəs/", uk: "/ˈkɒnʃəs/"),
+        "exaggerate": IPALookup(us: "/ɪɡˈzædʒəreɪt/", uk: "/ɪɡˈzædʒəreɪt/"),
+        "mysterious": IPALookup(us: "/mɪˈstɪəriəs/", uk: "/mɪˈstɪəriəs/"),
+        "sophisticated": IPALookup(us: "/səˈfɪstɪkeɪtɪd/", uk: "/səˈfɪstɪkeɪtɪd/"),
+        "phenomenon": IPALookup(us: "/fɪˈnɒmɪnən/", uk: "/fɪˈnɒmɪnən/"),
+        "vocabulary": IPALookup(us: "/vəˈkæbjʊləri/", uk: "/vəˈkæbjʊləri/"),
+        "prerequisite": IPALookup(us: "/priːˈrekwɪzɪt/", uk: "/priːˈrekwɪzɪt/"),
+        "Wednesday": IPALookup(us: "/ˈwenzdeɪ/", uk: "/ˈwenzdeɪ/"),
+        "recipe": IPALookup(us: "/ˈresɪpi/", uk: "/ˈresɪpi/"),
+        "island": IPALookup(us: "/ˈaɪlənd/", uk: "/ˈaɪlənd/"),
+        "colonel": IPALookup(us: "/ˈkɜːrnl/", uk: "/ˈkɜːnl/"),
+        "choir": IPALookup(us: "/ˈkwaɪər/", uk: "/ˈkwaɪə/"),
+        "sword": IPALookup(us: "/sɔːrd/", uk: "/sɔːd/"),
+        "schedule": IPALookup(us: "/ˈskedʒuːl/", uk: "/ˈʃeːdjuːl/"),
+        "comfortable": IPALookup(us: "/ˈkʌmftəbəl/", uk: "/ˈkʌmftəbəl/"),
+        "temperature": IPALookup(us: "/ˈtemprətʃər/", uk: "/ˈtemprətʃə/"),
     ]
     
-    private func getIPAPhonetic(for word: String) -> String {
+    private func getIPAPhonetic(for word: String) -> IPALookup {
         let lowercased = word.lowercased()
             .trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.whitespaces))
-        return commonIPA[lowercased] ?? ""
-    }
-    
-    private func generatePronunciationGuide(word: String, language: String) -> String {
-        // Currently returns empty — AI provides this field
-        return ""
+        if let lookup = commonIPA[lowercased] {
+            return lookup
+        }
+        return IPALookup(us: "", uk: "")
     }
     
     // MARK: - AI Generated
@@ -156,9 +250,12 @@ class PhoneticTooltipService {
         AIScriptService.shared.generatePhonetic(word: word, targetLanguage: targetLanguage) { result in
             switch result {
             case .success(let parsed):
+                // AI returns US IPA in parsed.ipa; check if AI also returned UK
+                let ukIPA = self.parseUKIPA(from: parsed.pronunciation)
                 let phoneticResult = PhoneticResult(
                     word: word,
                     phonetic: parsed.ipa,
+                    phoneticUK: ukIPA,
                     translation: parsed.translation,
                     pronunciation: parsed.pronunciation
                 )
@@ -170,8 +267,17 @@ class PhoneticTooltipService {
         }
     }
     
-    private func nativeLanguageName(_ code: String) -> String {
-        let locale = Locale(identifier: code)
-        return locale.localizedString(forLanguageCode: code) ?? code
+    /// Try to extract UK IPA from the AI pronunciation field
+    /// The AI prompt now asks for US:/UK: format; UK may end up in pronunciation as fallback
+    private func parseUKIPA(from content: String) -> String {
+        // Check if content contains UK: prefix
+        let lines = content.components(separatedBy: "\n")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("UK:") {
+                return String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return ""
     }
 }

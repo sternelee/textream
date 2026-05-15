@@ -526,15 +526,17 @@ Questions:
         let nativeLangName = Locale(identifier: targetLanguage).localizedString(forLanguageCode: targetLanguage) ?? targetLanguage
 
         let systemPrompt = """
-You are a pronunciation assistant. Given a word and a target language, provide:
-1. The IPA phonetic transcription
-2. The translation in the target language
-3. An approximate pronunciation guide using \(nativeLangName) sounds
+You are a pronunciation and translation assistant. Given an English word and a target language, provide:
+1. American English IPA phonetic transcription
+2. British English IPA phonetic transcription (if different from American)
+3. The translation in the target language
+4. An approximate pronunciation guide using native language sounds
 
 Respond ONLY in this exact format (no markdown, no extra text):
-IPA: <ipa transcription>
-TRANSLATION: <translation>
-PRONUNCIATION: <approximate guide>
+US: <American IPA>
+UK: <British IPA>
+TRANSLATION: <translation in target language>
+PRONUNCIATION: <approximate guide using native sounds>
 """
         let userPrompt = "Word: \"\(word)\"\nTarget language: \(nativeLangName) (\(targetLanguage))"
 
@@ -592,7 +594,10 @@ PRONUNCIATION: <approximate guide>
     }
 
     /// Parse phonetic generation response into structured fields
+    /// Handles both old format (IPA:) and new format (US:/UK:)
     static func parsePhoneticResponse(_ content: String) -> (ipa: String, translation: String, pronunciation: String) {
+        var usIPA = ""
+        var ukIPA = ""
         var ipa = ""
         var translation = ""
         var pronunciation = ""
@@ -600,13 +605,22 @@ PRONUNCIATION: <approximate guide>
         let lines = content.split(separator: "\n")
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("IPA:") {
+            if trimmed.hasPrefix("US:") {
+                usIPA = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("UK:") {
+                ukIPA = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            } else if trimmed.hasPrefix("IPA:") {
                 ipa = String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespaces)
             } else if trimmed.hasPrefix("TRANSLATION:") {
                 translation = String(trimmed.dropFirst(12)).trimmingCharacters(in: .whitespaces)
             } else if trimmed.hasPrefix("PRONUNCIATION:") {
                 pronunciation = String(trimmed.dropFirst(14)).trimmingCharacters(in: .whitespaces)
             }
+        }
+
+        // Combine US and UK IPA into single ipa field, separated by newline if both present
+        if !usIPA.isEmpty {
+            ipa = usIPA
         }
 
         // Fallback: if nothing parsed, treat entire content as pronunciation guide
