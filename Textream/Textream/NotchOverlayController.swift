@@ -906,6 +906,41 @@ struct NotchOverlayView: View {
                 .frame(width: 80, height: 24)
                 .clipped()
 
+                // Smart indicator: WPM + pause rescue + pacing warning
+                if listeningMode == .wordTracking {
+                    if speechRecognizer.isLongPause {
+                        // Forgot-line rescue: flash next few words
+                        HStack(spacing: 2) {
+                            Text("···")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.cyan)
+                                .opacity(0.5 + 0.5 * sin(Date().timeIntervalSince1970 * 3))
+                        }
+                        .frame(width: 40, alignment: .leading)
+                        .help("Long pause detected — next words will appear soon")
+                    } else if !speechRecognizer.isOnTrack {
+                        HStack(spacing: 2) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.pink)
+                            Text("\(Int(speechRecognizer.estimatedTimeRemaining))s")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.pink)
+                        }
+                        .frame(width: 55, alignment: .leading)
+                    } else if speechRecognizer.currentWPM > 0 {
+                        HStack(spacing: 2) {
+                            Text("\(Int(speechRecognizer.currentWPM))")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(speechRecognizer.wpmStatusColor)
+                            Text("WPM")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                        .frame(width: 50, alignment: .leading)
+                    }
+                }
+
                 if listeningMode == .wordTracking {
                     Text(speechRecognizer.lastSpokenText.split(separator: " ").suffix(3).joined(separator: " "))
                         .font(.system(size: 11, weight: .medium))

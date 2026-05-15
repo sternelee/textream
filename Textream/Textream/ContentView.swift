@@ -17,12 +17,17 @@ struct ContentView: View {
     @State private var dictationHighlightRange: NSRange? = nil
     @State private var dictationCaretPosition: Int? = nil
     @State private var editorCaretPosition: Int = 0
+    @State private var selectedText: String = ""
+    @State private var showPolish = false
+    @State private var showHistory = false
+    @State private var showMockQA = false
     @State private var isDroppingPresentation = false
     @State private var dropError: String?
     @State private var dropAlertTitle: String = "Import Error"
     @State private var showSettings = false
     @State private var showAbout = false
     @State private var showAIGenerate = false
+    @State private var showPractice = false
     @FocusState private var isTextFocused: Bool
 
     private let defaultText = """
@@ -187,14 +192,38 @@ Happy presenting! [wave]
     }
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                HighlightingTextEditor(
+        HStack(spacing: 0) {
+            // Paragraph outline sidebar
+            if !currentText.wrappedValue.isEmpty {
+                VStack(spacing: 8) {
+                    ScriptOutlineView(
+                        text: currentText.wrappedValue,
+                        currentCharOffset: editorCaretPosition,
+                        onJump: { offset in
+                            dictationCaretPosition = offset
+                        }
+                    )
+                    ScriptMiniMapView(
+                        text: currentText.wrappedValue,
+                        currentCharOffset: editorCaretPosition
+                    )
+                    Spacer()
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 4)
+                .padding(.top, 8)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            
+            VStack(spacing: 0) {
+                ZStack {
+                    HighlightingTextEditor(
                     text: currentText,
                     font: .systemFont(ofSize: 16, weight: .regular).rounded,
                     highlightRange: dictationHighlightRange,
                     caretPosition: $dictationCaretPosition,
-                    editorCaretPosition: $editorCaretPosition
+                    editorCaretPosition: $editorCaretPosition,
+                    selectedText: $selectedText
                 )
                 .onChange(of: editorCaretPosition) { _, newPos in
                     guard isRecording else { return }
@@ -332,6 +361,7 @@ Happy presenting! [wave]
             }
         }
     }
+}
 
     private var directorOverlay: some View {
         VStack(spacing: 20) {
@@ -476,6 +506,65 @@ Happy presenting! [wave]
                     }
                     .buttonStyle(.plain)
 
+                    // AI Polish button
+                    Button {
+                        showPolish = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Polish")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedText.isEmpty || !AIScriptService.shared.hasAPIKey)
+                    .opacity(selectedText.isEmpty ? 0.4 : 1)
+
+                    // Practice button
+                    Button {
+                        showPractice = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "mic.circle")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Practice")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Mock Q                    // History buttonA button
+                    Button {
+                        showMockQA = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Q                    // History buttonA")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(service.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    // History button
+                    Button {
+                        showHistory = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("History")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         showSettings = true
                     } label: {
@@ -500,6 +589,31 @@ Happy presenting! [wave]
         }
         .sheet(isPresented: $showAIGenerate) {
             AIGenerateView()
+        }
+        .sheet(isPresented: $showPolish) {
+            AIPolishView(
+                selectedText: selectedText.isEmpty ? service.currentPageText : selectedText,
+                onApply: { polished in
+                    guard service.currentPageIndex < service.pages.count else { return }
+                    if selectedText.isEmpty {
+                        service.pages[service.currentPageIndex] = polished
+                    } else {
+                        // Replace selected text in the current page
+                        let text = service.pages[service.currentPageIndex]
+                        guard let range = text.range(of: selectedText) else { return }
+                        service.pages[service.currentPageIndex].replaceSubrange(range, with: polished)
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showPractice) {
+            PracticeView(scriptText: service.currentPageText)
+        }
+        .sheet(isPresented: $showHistory) {
+            PracticeHistoryView()
+        }
+        .sheet(isPresented: $showMockQA) {
+            MockQAView(scriptText: service.currentPageText)
         }
         .sheet(isPresented: $showAbout) {
             AboutView()

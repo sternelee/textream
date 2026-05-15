@@ -25,6 +25,8 @@ struct HighlightingTextEditor: NSViewRepresentable {
     @Binding var caretPosition: Int?
     /// Continuously reported current caret position in the editor
     @Binding var editorCaretPosition: Int
+    /// Currently selected text in the editor
+    @Binding var selectedText: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -112,10 +114,17 @@ struct HighlightingTextEditor: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            let pos = textView.selectedRange().location
-            if parent.editorCaretPosition != pos {
+            let range = textView.selectedRange()
+            if parent.editorCaretPosition != range.location {
                 DispatchQueue.main.async { [weak self] in
-                    self?.parent.editorCaretPosition = pos
+                    self?.parent.editorCaretPosition = range.location
+                }
+            }
+            // Extract selected text
+            let selected = (textView.string as NSString).substring(with: range)
+            if parent.selectedText != selected {
+                DispatchQueue.main.async { [weak self] in
+                    self?.parent.selectedText = selected
                 }
             }
         }
@@ -156,15 +165,41 @@ struct HighlightingTextEditor: NSViewRepresentable {
             ]
             textStorage.setAttributes(defaultAttributes, range: fullRange)
 
-            // Highlight [bracket] annotations
-            let matches = Self.annotationPattern.matches(in: text, options: [], range: fullRange)
-            for match in matches {
-                let annotationAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFontManager.shared.convert(parent.font, toHaveTrait: .italicFontMask),
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                    .backgroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.08)
+            // Highlight [bracket] annotations with markup-aware colors
+            let bracketMatches = Self.annotationPattern.matches(in: text, options: [], range: fullRange)
+            for match in bracketMatches {
+                let bracketText = (text as NSString).substring(with: match.range)
+                let tag = ScriptMarkupParser.tag(for: bracketText)
+                let tagAttrs: [NSAttributedString.Key: Any]
+                if let tag = tag {
+                    // Markup tag: use tag-specific styling
+                    let nsColor = NSColor(tag.editorColor)
+                    let nsBg = NSColor(tag.editorBackground)
+                    tagAttrs = [
+                        .font: NSFontManager.shared.convert(parent.font, toHaveTrait: .italicFontMask),
+                        .foregroundColor: nsColor,
+                        .backgroundColor: nsBg
+                    ]
+                } else {
+                    // Regular annotation (stage direction like [smile])
+                    tagAttrs = [
+                        .font: NSFontManager.shared.convert(parent.font, toHaveTrait: .italicFontMask),
+                        .foregroundColor: NSColor.secondaryLabelColor,
+                        .backgroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.08)
+                    ]
+                }
+                textStorage.addAttributes(tagAttrs, range: match.range)
+            }
+
+            // Highlight **bold** text
+            let boldMatches = ScriptMarkupParser.boldPattern.matches(in: text, options: [], range: fullRange)
+            for match in boldMatches {
+                // match.range covers the full **text** including asterisks
+                let boldAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFontManager.shared.convert(parent.font, toHaveTrait: .boldFontMask),
+                    .foregroundColor: NSColor.labelColor
                 ]
-                textStorage.addAttributes(annotationAttributes, range: match.range)
+                textStorage.addAttributes(boldAttrs, range: match.range)
             }
 
             textStorage.endEditing()

@@ -328,6 +328,180 @@ Generate the next page of the script. Maintain the same tone, style, and format.
         task.resume()
     }
 
+    /// Polish selected text with a specific instruction
+    func polish(
+        text: String,
+        instruction: String,
+        onComplete: @escaping (Result<String, AIScriptError>) -> Void
+    ) {
+        let apiKey = NotchSettings.shared.openAIAPIKey
+        guard !apiKey.isEmpty else {
+            onComplete(.failure(.missingAPIKey))
+            return
+        }
+
+        let model = NotchSettings.shared.openAIModel
+        let baseURL = NotchSettings.shared.openAIBaseURL
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            onComplete(.failure(.invalidURL))
+            return
+        }
+
+        let systemPrompt = """
+You are an expert script editor. Rewrite the provided text according to the user's instruction.
+Preserve the original structure including [pause], [emphasis], and other markup tags.
+Only return the rewritten text, no explanations.
+"""
+        let userPrompt = "Instruction: \(instruction)\n\nText:\n---\n\(text)\n---"
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ],
+            "stream": false,
+            "temperature": 0.7,
+            "max_tokens": 2048
+        ]
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            onComplete(.failure(.decodingError))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = bodyData
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    onComplete(.failure(.networkError(error)))
+                    return
+                }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    onComplete(.failure(.networkError(NSError(domain: "", code: -1))))
+                    return
+                }
+                if httpResponse.statusCode != 200 {
+                    let message = Self.extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                    onComplete(.failure(.apiError(message)))
+                    return
+                }
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let choices = json["choices"] as? [[String: Any]],
+                      let first = choices.first,
+                      let message = first["message"] as? [String: Any],
+                      let content = message["content"] as? String else {
+                    onComplete(.failure(.decodingError))
+                    return
+                }
+                onComplete(.success(content.trimmingCharacters(in: .whitespacesAndNewlines)))
+            }
+        }
+        task.resume()
+    }
+
+    /// Generate mock Q&A questions based on script content
+    func generateQuestions(
+        scriptText: String,
+        count: Int = 5,
+        onComplete: @escaping (Result<[String], AIScriptError>) -> Void
+    ) {
+        let apiKey = NotchSettings.shared.openAIAPIKey
+        guard !apiKey.isEmpty else {
+            onComplete(.failure(.missingAPIKey))
+            return
+        }
+
+        let model = NotchSettings.shared.openAIModel
+        let baseURL = NotchSettings.shared.openAIBaseURL
+        guard let url = URL(string: "\(baseURL)/chat/completions") else {
+            onComplete(.failure(.invalidURL))
+            return
+        }
+
+        let systemPrompt = """
+You are an expert interviewer. Based on the provided script or speech, generate likely follow-up questions an audience might ask.
+The questions should be specific to the content, insightful, and challenging.
+Return ONLY a numbered list of questions, one per line. No extra commentary.
+"""
+        let userPrompt = """
+Generate \(count) likely questions that an audience would ask after hearing this speech:
+
+---
+\(scriptText)
+---
+
+Questions:
+"""
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt]
+            ],
+            "stream": false,
+            "temperature": 0.8,
+            "max_tokens": 2048
+        ]
+
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            onComplete(.failure(.decodingError))
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = bodyData
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    onComplete(.failure(.networkError(error)))
+                    return
+                }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    onComplete(.failure(.networkError(NSError(domain: "", code: -1))))
+                    return
+                }
+                if httpResponse.statusCode != 200 {
+                    let message = Self.extractErrorMessage(from: data, statusCode: httpResponse.statusCode)
+                    onComplete(.failure(.apiError(message)))
+                    return
+                }
+                guard let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let choices = json["choices"] as? [[String: Any]],
+                      let first = choices.first,
+                      let message = first["message"] as? [String: Any],
+                      let content = message["content"] as? String else {
+                    onComplete(.failure(.decodingError))
+                    return
+                }
+                let questions = content
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty && $0.first?.isNumber == true }
+                    .map { line -> String in
+                        // Remove leading number and punctuation like "1. " or "1) "
+                        let pattern = "^\\d+[.\\)\\-\\s]+"
+                        return line.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+                    }
+                    .filter { !$0.isEmpty }
+                onComplete(.success(questions))
+            }
+        }
+        task.resume()
+    }
+
     /// Fetch available models from the remote API
     func fetchModels(completion: @escaping (Result<[String], AIScriptError>) -> Void) {
         let apiKey = NotchSettings.shared.openAIAPIKey

@@ -7,6 +7,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import Speech
 import AVFoundation
 import CoreAudio
@@ -79,6 +80,24 @@ class SpeechRecognizer {
     var lastSpokenText: String = ""
     var shouldDismiss: Bool = false
     var shouldAdvancePage: Bool = false
+    
+    /// Real-time words-per-minute estimate based on recognized progress
+    var currentWPM: Double = 0
+    /// WPM history for trend visualization (last 20 samples)
+    var wpmHistory: [Double] = []
+    private var speechStartTime: Date?
+    private var wpmUpdateTimer: Timer?
+    
+    /// Pause detection: true when user has been silent for too long (potential forgotten line)
+    var isLongPause: Bool = false
+    /// Estimated time remaining in seconds based on current pace
+    var estimatedTimeRemaining: Double = 0
+    /// Whether the user is on track to finish within a reasonable time
+    var isOnTrack: Bool = true
+    private var silenceStartTime: Date?
+    private let longPauseThreshold: TimeInterval = 2.5 // seconds
+    private let silenceThreshold: CGFloat = 0.03
+    private var pauseCheckTimer: Timer?
 
     /// True when recent audio levels indicate the user is actively speaking
     var isSpeaking: Bool {
@@ -143,6 +162,9 @@ class SpeechRecognizer {
         matchStartOffset = 0
         retryCount = 0
         recentMatchPositions = []
+        currentWPM = 0
+        wpmHistory = []
+        speechStartTime = nil
         error = nil
         sessionGeneration += 1
 
@@ -200,6 +222,8 @@ class SpeechRecognizer {
 
     func stop() {
         isListening = false
+        speechStartTime = nil
+        stopWPMTimer()
         cleanupRecognition()
     }
 
@@ -208,6 +232,8 @@ class SpeechRecognizer {
         sourceText = ""
         retryCount = maxRetries
         recentMatchPositions = []
+        speechStartTime = nil
+        stopWPMTimer()
         cleanupRecognition()
     }
 
@@ -216,6 +242,7 @@ class SpeechRecognizer {
         matchStartOffset = recognizedCharCount
         recentMatchPositions = []
         shouldDismiss = false
+        speechStartTime = Date()
         beginRecognition()
     }
 
@@ -432,6 +459,8 @@ class SpeechRecognizer {
             audioEngine.prepare()
             try audioEngine.start()
             isListening = true
+            speechStartTime = Date()
+            startWPMTimer()
             startPreemptiveTimer()
         } catch {
             // Transient failure after a device switch — retry with longer delay
@@ -572,6 +601,92 @@ class SpeechRecognizer {
         preemptiveRestartTimer?.invalidate()
         preemptiveRestartTimer = nil
     }
+    
+    // MARK: - WPM Tracking
+    
+    private func startWPMTimer() {
+        wpmUpdateTimer?.invalidate()
+        wpmUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateWPM()
+        }
+        pauseCheckTimer?.invalidate()
+        pauseCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkPauseAndPacing()
+        }
+    }
+    
+    private func stopWPMTimer() {
+        wpmUpdateTimer?.invalidate()
+        wpmUpdateTimer = nil
+        pauseCheckTimer?.invalidate()
+        pauseCheckTimer = nil
+    }
+    
+    private func checkPauseAndPacing() {
+        guard !sourceText.isEmpty else { return }
+        let recent = audioLevels.suffix(20)
+        let avgLevel = recent.isEmpty ? 0 : recent.reduce(0, +) / CGFloat(recent.count)
+        
+        // Silence detection
+        if avgLevel < silenceThreshold {
+            if silenceStartTime == nil {
+                silenceStartTime = Date()
+            } else if let start = silenceStartTime, Date().timeIntervalSince(start) > longPauseThreshold {
+                isLongPause = true
+            }
+        } else {
+            silenceStartTime = nil
+            isLongPause = false
+        }
+        
+        // Pacing estimation
+        let remainingChars = max(0, sourceText.count - recognizedCharCount)
+        if currentWPM > 10, remainingChars > 0 {
+            let estimatedMinutes = Double(remainingChars) / 5.0 / currentWPM
+            estimatedTimeRemaining = estimatedMinutes * 60.0
+            // Assume 30s per slide/page as target
+            isOnTrack = estimatedTimeRemaining < 60.0
+        } else {
+            estimatedTimeRemaining = 0
+            isOnTrack = true
+        }
+    }
+    
+    private func updateWPM() {
+        guard let startTime = speechStartTime, recognizedCharCount > 0 else {
+            currentWPM = 0
+            return
+        }
+        let elapsed = Date().timeIntervalSince(startTime)
+        guard elapsed > 0 else { return }
+        // Estimate word count from characters (avg 5 chars per word)
+        let estimatedWords = Double(recognizedCharCount) / 5.0
+        let wpm = estimatedWords / (elapsed / 60.0)
+        currentWPM = wpm
+        wpmHistory.append(wpm)
+        if wpmHistory.count > 20 {
+            wpmHistory.removeFirst()
+        }
+    }
+    
+    /// Overall status color for the teleprompter indicator (combines WPM + pause + pacing)
+    var statusColor: Color {
+        if isLongPause { return .cyan }
+        if !isOnTrack { return .pink }
+        return wpmStatusColor
+    }
+    
+    /// WPM status color for visual feedback
+    var wpmStatusColor: Color {
+        switch currentWPM {
+        case 0: return .gray
+        case ..<100: return .blue
+        case 100..<120: return .green
+        case 120..<160: return .yellow
+        case 160..<200: return .orange
+        default: return .red
+        }
+    }
 
     // MARK: - Fuzzy character-level matching
 
@@ -700,6 +815,8 @@ class SpeechRecognizer {
     }
 
     private static func isAnnotationWord(_ word: String) -> Bool {
+        // Include markup tags as annotations so speech recognition skips them
+        if ScriptMarkupParser.tag(for: word) != nil { return true }
         if word.hasPrefix("[") && word.hasSuffix("]") { return true }
         let stripped = word.filter { $0.isLetter || $0.isNumber }
         return stripped.isEmpty
