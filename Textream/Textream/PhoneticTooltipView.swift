@@ -1,0 +1,107 @@
+//
+//  PhoneticTooltipView.swift
+//  Textream
+//
+//  Floating tooltip showing phonetic hint for a difficult word.
+//
+
+import SwiftUI
+
+struct PhoneticTooltipView: View {
+    let result: PhoneticResult
+    let onDismiss: () -> Void
+    
+    @State private var appeared = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header with word
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(result.word)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(Color.primary.opacity(0.08))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Divider()
+                .background(Color.primary.opacity(0.1))
+            
+            // IPA
+            if !result.phonetic.isEmpty {
+                HStack(spacing: 4) {
+                    Text("IPA")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Text(result.phonetic)
+                        .font(.system(size: 14, weight: .medium, design: .serif))
+                        .foregroundStyle(.primary)
+                }
+            }
+            
+            // Translation
+            if !result.translation.isEmpty {
+                HStack(spacing: 4) {
+                    Text(NotchSettings.shared.nativeLanguage.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Text(result.translation)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                }
+            }
+            
+            // Pronunciation guide
+            if !result.pronunciation.isEmpty {
+                HStack(alignment: .top, spacing: 4) {
+                    Text("💡")
+                        .font(.system(size: 11))
+                    Text(result.pronunciation)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.primary.opacity(0.8))
+                        .lineLimit(3)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 260)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.accentColor.opacity(0.05))
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 4)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 8)
+        .onAppear {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                appeared = true
+            }
+            // Auto-dismiss after 5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                onDismiss()
+            }
+        }
+    }
+}

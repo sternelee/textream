@@ -641,6 +641,10 @@ struct NotchOverlayView: View {
     @State private var dragStartHeight: CGFloat = -1
     @State private var isHovering: Bool = false
 
+    // Phonetic tooltip state
+    @State private var showPhoneticTooltip = false
+    @State private var phoneticResult: PhoneticResult?
+
     // Timer-based scroll for classic & silence-paused modes
     @State private var timerWordProgress: Double = 0
     @State private var isPaused: Bool = false
@@ -845,6 +849,32 @@ struct NotchOverlayView: View {
         }
         .onChange(of: content.totalCharCount) { _, _ in
             timerWordProgress = 0
+        }
+        // Phonetic tooltip: detect difficult words
+        .onChange(of: speechRecognizer.currentDifficultWord) { _, newWord in
+            guard NotchSettings.shared.phoneticTooltipEnabled,
+                  !newWord.isEmpty else {
+                showPhoneticTooltip = false
+                phoneticResult = nil
+                return
+            }
+            // Fetch phonetic hint
+            PhoneticTooltipService.shared.onResult = { result in
+                guard let result = result else { return }
+                phoneticResult = result
+                showPhoneticTooltip = true
+            }
+            PhoneticTooltipService.shared.fetchHint(for: newWord)
+        }
+        .overlay(alignment: .bottom) {
+            if showPhoneticTooltip, let result = phoneticResult {
+                PhoneticTooltipView(result: result) {
+                    showPhoneticTooltip = false
+                    phoneticResult = nil
+                }
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 
