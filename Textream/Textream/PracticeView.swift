@@ -14,6 +14,7 @@ struct PracticeView: View {
     @State private var showReport = false
     @State private var playbackProgress: Double = 0
     @State private var playbackTimer: Timer?
+    @State private var showSentenceLoop = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +55,9 @@ struct PracticeView: View {
         .background(.ultraThinMaterial)
         .onDisappear {
             playbackTimer?.invalidate()
+        }
+        .sheet(isPresented: $showSentenceLoop) {
+            SentenceLoopView(scriptText: scriptText)
         }
     }
 
@@ -123,6 +127,20 @@ struct PracticeView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
+
+                // Sentence loop button
+                Button {
+                    showSentenceLoop = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "repeat")
+                            .font(.system(size: 10))
+                        Text("Sentence Loop")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
             }
 
             Spacer()
