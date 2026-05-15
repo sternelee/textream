@@ -140,6 +140,8 @@ class SpeechRecognizer {
     /// Sliding window of recent match positions for confidence gating.
     /// We require 2-of-3 recent results to agree before committing a forward jump.
     private var recentMatchPositions: [Int] = []
+    /// Guard against recursive restarts caused by cancel → error → restartTask loops
+    private var isRestartingTask = false
 
     /// Update the source text while preserving the current recognized char count.
     /// Used by Director Mode to live-edit unread text without resetting read progress.
@@ -495,6 +497,7 @@ class SpeechRecognizer {
     }
 
     private func restartRecognition() {
+        guard !isRestartingTask else { return }
         retryCount = 0
         isListening = true
         if audioEngine.isRunning {
@@ -516,6 +519,10 @@ class SpeechRecognizer {
     // MARK: - Soft restart (task only, keeps audio engine running)
 
     private func restartTask() {
+        // Prevent recursive restarts caused by cancel → error → restartTask loops
+        guard !isRestartingTask else { return }
+        isRestartingTask = true
+
         // Update match offset before restarting
         matchStartOffset = recognizedCharCount
         recentMatchPositions = []
@@ -575,6 +582,8 @@ class SpeechRecognizer {
             }
             if let error {
                 DispatchQueue.main.async {
+                    // Skip retry logic if we're actively in the middle of a task restart
+                    guard !self.isRestartingTask else { return }
                     guard self.recognitionRequest != nil else { return }
                     guard self.isListening && !self.shouldDismiss && !self.sourceText.isEmpty else {
                         self.isListening = false
@@ -605,6 +614,7 @@ class SpeechRecognizer {
         }
 
         startPreemptiveTimer()
+        isRestartingTask = false
     }
 
     // MARK: - Pre-emptive restart timer
