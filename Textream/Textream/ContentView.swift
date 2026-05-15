@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var selectedText: String = ""
     @State private var showPolish = false
     @State private var showHistory = false
+    @State private var showMockQA = false
     @State private var isDroppingPresentation = false
     @State private var dropError: String?
     @State private var dropAlertTitle: String = "Import Error"
@@ -528,6 +529,21 @@ Happy presenting! [wave]
                     }
                     .buttonStyle(.plain)
 
+                    // Mock Q                    // History buttonA button
+                    Button {
+                        showMockQA = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Q                    // History buttonA")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(service.currentPageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
                     // History button
                     Button {
                         showHistory = true
@@ -588,6 +604,9 @@ Happy presenting! [wave]
         }
         .sheet(isPresented: $showHistory) {
             PracticeHistoryView()
+        }
+        .sheet(isPresented: $showMockQA) {
+            MockQAView(scriptText: service.currentPageText)
         }
         .sheet(isPresented: $showAbout) {
             AboutView()
