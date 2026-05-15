@@ -87,6 +87,17 @@ class SpeechRecognizer {
     var wpmHistory: [Double] = []
     private var speechStartTime: Date?
     private var wpmUpdateTimer: Timer?
+    
+    /// Pause detection: true when user has been silent for too long (potential forgotten line)
+    var isLongPause: Bool = false
+    /// Estimated time remaining in seconds based on current pace
+    var estimatedTimeRemaining: Double = 0
+    /// Whether the user is on track to finish within a reasonable time
+    var isOnTrack: Bool = true
+    private var silenceStartTime: Date?
+    private let longPauseThreshold: TimeInterval = 2.5 // seconds
+    private let silenceThreshold: CGFloat = 0.03
+    private var pauseCheckTimer: Timer?
 
     /// True when recent audio levels indicate the user is actively speaking
     var isSpeaking: Bool {
@@ -598,11 +609,47 @@ class SpeechRecognizer {
         wpmUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateWPM()
         }
+        pauseCheckTimer?.invalidate()
+        pauseCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkPauseAndPacing()
+        }
     }
     
     private func stopWPMTimer() {
         wpmUpdateTimer?.invalidate()
         wpmUpdateTimer = nil
+        pauseCheckTimer?.invalidate()
+        pauseCheckTimer = nil
+    }
+    
+    private func checkPauseAndPacing() {
+        guard !sourceText.isEmpty else { return }
+        let recent = audioLevels.suffix(20)
+        let avgLevel = recent.isEmpty ? 0 : recent.reduce(0, +) / CGFloat(recent.count)
+        
+        // Silence detection
+        if avgLevel < silenceThreshold {
+            if silenceStartTime == nil {
+                silenceStartTime = Date()
+            } else if let start = silenceStartTime, Date().timeIntervalSince(start) > longPauseThreshold {
+                isLongPause = true
+            }
+        } else {
+            silenceStartTime = nil
+            isLongPause = false
+        }
+        
+        // Pacing estimation
+        let remainingChars = max(0, sourceText.count - recognizedCharCount)
+        if currentWPM > 10, remainingChars > 0 {
+            let estimatedMinutes = Double(remainingChars) / 5.0 / currentWPM
+            estimatedTimeRemaining = estimatedMinutes * 60.0
+            // Assume 30s per slide/page as target
+            isOnTrack = estimatedTimeRemaining < 60.0
+        } else {
+            estimatedTimeRemaining = 0
+            isOnTrack = true
+        }
     }
     
     private func updateWPM() {
@@ -620,6 +667,13 @@ class SpeechRecognizer {
         if wpmHistory.count > 20 {
             wpmHistory.removeFirst()
         }
+    }
+    
+    /// Overall status color for the teleprompter indicator (combines WPM + pause + pacing)
+    var statusColor: Color {
+        if isLongPause { return .cyan }
+        if !isOnTrack { return .pink }
+        return wpmStatusColor
     }
     
     /// WPM status color for visual feedback
