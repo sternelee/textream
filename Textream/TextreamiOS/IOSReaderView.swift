@@ -4,7 +4,6 @@ import SwiftUI
 struct IOSReaderView: View {
     @Bindable var model: IOSTeleprompterModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var justTappedIndex: Int? = nil
     @State private var showQuickSettings = false
     @State private var controlsHidden = false
     @State private var hideControlsTimer: Timer?
@@ -25,7 +24,7 @@ struct IOSReaderView: View {
     @State private var showingPractice = false
     @State private var showPhoneticTooltip = false
     @State private var selectedWordForLookup: String? = nil
-    private let tickTimer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+    private let tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -49,7 +48,7 @@ struct IOSReaderView: View {
                     .foregroundStyle(.white)
                     .toolbar(.hidden, for: .navigationBar)
                     .onReceive(tickTimer) { _ in
-                        model.tick(deltaSeconds: 0.05)
+                        model.tick(deltaSeconds: 0.1)
                         let now = Date()
                         let newString = timeFormatter.string(from: now)
                         if newString != currentTimeString {
@@ -57,9 +56,7 @@ struct IOSReaderView: View {
                         }
                     }
                     .onChange(of: model.currentWordIndex) { _, newValue in
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            scrollProxy.scrollTo(newValue, anchor: .center)
-                        }
+                        scrollProxy.scrollTo(newValue, anchor: .center)
                     }
                     .onChange(of: model.document.currentPageIndex) { _, _ in
                         let currentPage = model.document.currentPageIndex + 1
@@ -382,7 +379,24 @@ struct IOSReaderView: View {
                     maxWidth: maxTextWidth
                 ) {
                     ForEach(Array(model.currentWords.enumerated()), id: \.offset) { index, word in
-                        wordButton(word: word, index: index, compact: compact)
+                        WordButtonView(
+                            word: word,
+                            isCurrent: index == model.currentWordIndex,
+                            isPast: index < model.currentWordIndex,
+                            fontSize: model.readerFontSize,
+                            fontDesign: model.readerFontFamily.fontDesign,
+                            highlightTint: model.highlightColorPreset.tint,
+                            softBackground: model.highlightColorPreset.softBackground,
+                            compact: compact,
+                            onTap: { model.jumpToWord(index: index) },
+                            onSpeak: { model.speakWord(word) },
+                            onLookup: {
+                                selectedWordForLookup = word
+                                showPhoneticTooltip = true
+                            },
+                            phoneticEnabled: model.phoneticTooltipEnabled
+                        )
+                        .id(index)
                     }
                 }
                 .frame(maxWidth: maxTextWidth, alignment: .leading)
@@ -1047,48 +1061,6 @@ struct IOSReaderView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func wordButton(word: String, index: Int, compact: Bool) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.15)) {
-                justTappedIndex = index
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                withAnimation(.easeIn(duration: 0.15)) {
-                    justTappedIndex = nil
-                }
-            }
-            model.jumpToWord(index: index)
-        } label: {
-            Text(word)
-                .font(.system(size: model.readerFontSize, weight: index == model.currentWordIndex ? .bold : .semibold, design: model.readerFontFamily.fontDesign))
-                .lineLimit(1)
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, compact ? 8 : 10)
-                .padding(.vertical, compact ? 7 : 8)
-                .background(wordBackground(for: index))
-                .foregroundStyle(wordForeground(for: index))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .scaleEffect(justTappedIndex == index ? 1.15 : 1.0)
-        }
-        .buttonStyle(.plain)
-        .id(index)
-        .contextMenu {
-            Button {
-                model.speakWord(word)
-            } label: {
-                Label("Speak", systemImage: "speaker.wave.2")
-            }
-            if model.phoneticTooltipEnabled {
-                Button {
-                    selectedWordForLookup = word
-                    showPhoneticTooltip = true
-                } label: {
-                    Label("Lookup", systemImage: "text.magnifyingglass")
-                }
-            }
-        }
-    }
-
     @ViewBuilder
     private func indicatorToast(icon: String, text: String?) -> some View {
         if let text = text {
@@ -1117,26 +1089,6 @@ struct IOSReaderView: View {
         }
     }
 
-    private func wordBackground(for index: Int) -> Color {
-        if index < model.currentWordIndex {
-            return .white.opacity(0.08)
-        }
-        if index == model.currentWordIndex {
-            return model.highlightColorPreset.softBackground
-        }
-        return .clear
-    }
-
-    private func wordForeground(for index: Int) -> Color {
-        if index < model.currentWordIndex {
-            return .white.opacity(0.42)
-        }
-        if index == model.currentWordIndex {
-            return model.highlightColorPreset.tint
-        }
-        return .white
-    }
-
     private func controlButton(title: String, systemName: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 6) {
@@ -1155,6 +1107,68 @@ struct IOSReaderView: View {
         .disabled(disabled)
         .buttonStyle(.plain)
         .opacity(disabled ? 0.42 : 1)
+    }
+
+    private struct WordButtonView: View {
+        let word: String
+        let isCurrent: Bool
+        let isPast: Bool
+        let fontSize: Double
+        let fontDesign: Font.Design?
+        let highlightTint: Color
+        let softBackground: Color
+        let compact: Bool
+        let onTap: () -> Void
+        let onSpeak: () -> Void
+        let onLookup: () -> Void
+        let phoneticEnabled: Bool
+
+        @State private var isPressed = false
+
+        var body: some View {
+            Button(action: {
+                isPressed = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    isPressed = false
+                }
+                onTap()
+            }) {
+                Text(word)
+                    .font(.system(size: fontSize, weight: isCurrent ? .bold : .semibold, design: fontDesign))
+                    .lineLimit(1)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, compact ? 8 : 10)
+                    .padding(.vertical, compact ? 7 : 8)
+                    .background(backgroundColor)
+                    .foregroundStyle(foregroundColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .scaleEffect(isPressed ? 1.15 : 1.0)
+                    .animation(.easeOut(duration: 0.15), value: isPressed)
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button(action: onSpeak) {
+                    Label("Speak", systemImage: "speaker.wave.2")
+                }
+                if phoneticEnabled {
+                    Button(action: onLookup) {
+                        Label("Lookup", systemImage: "text.magnifyingglass")
+                    }
+                }
+            }
+        }
+
+        private var backgroundColor: Color {
+            if isPast { return .white.opacity(0.08) }
+            if isCurrent { return softBackground }
+            return .clear
+        }
+
+        private var foregroundColor: Color {
+            if isPast { return .white.opacity(0.42) }
+            if isCurrent { return highlightTint }
+            return .white
+        }
     }
 
     private func teleprompterColumns(for width: CGFloat) -> [GridItem] {

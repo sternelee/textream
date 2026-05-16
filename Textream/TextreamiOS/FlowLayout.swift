@@ -5,11 +5,29 @@ struct FlowLayout: Layout {
     var verticalSpacing: CGFloat = 10
     var maxWidth: CGFloat = .infinity
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    struct Cache {
+        var sizes: [CGSize] = []
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache(sizes: subviews.map { $0.sizeThatFits(.unspecified) })
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        guard cache.sizes.count != subviews.count else { return }
+        cache.sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         let effectiveWidth = min(proposal.width ?? maxWidth, maxWidth)
         guard effectiveWidth > 0, !subviews.isEmpty else { return .zero }
 
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let sizes = cache.sizes
+        guard sizes.count == subviews.count else {
+            // Fallback if cache is somehow out of sync
+            cache.sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+            return sizeThatFits(proposal: proposal, subviews: subviews, cache: &cache)
+        }
 
         var x: CGFloat = 0
         var y: CGFloat = 0
@@ -28,11 +46,16 @@ struct FlowLayout: Layout {
         return CGSize(width: effectiveWidth, height: y + lineHeight)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
         let effectiveWidth = min(bounds.width, maxWidth)
         guard effectiveWidth > 0, !subviews.isEmpty else { return }
 
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let sizes = cache.sizes
+        guard sizes.count == subviews.count else {
+            cache.sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+            placeSubviews(in: bounds, proposal: proposal, subviews: subviews, cache: &cache)
+            return
+        }
 
         var x: CGFloat = 0
         var y: CGFloat = 0
