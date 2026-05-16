@@ -86,17 +86,18 @@ class AIScriptService {
     func generate(
         scenario: AIScenario,
         userPrompt: String,
+        speechLocale: String? = nil,
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
-        let speechLocale = NotchSettings.shared.speechLocale
-        let languageName = Locale(identifier: speechLocale).localizedString(forIdentifier: speechLocale) ?? speechLocale
+        let resolvedLocale = speechLocale ?? NotchSettings.shared.speechLocale
+        let languageName = Locale(identifier: resolvedLocale).localizedString(forIdentifier: resolvedLocale) ?? resolvedLocale
         let fullUserPrompt = """
 Scenario: \(scenario.label)
 \(userPrompt)
 
 Generate a complete script suitable for reading on a teleprompter. Keep it natural and conversational.
-IMPORTANT: Write the entire script in \(languageName) (language code: \(speechLocale)). Do NOT use any other language.
+IMPORTANT: Write the entire script in \(languageName) (language code: \(resolvedLocale)). Do NOT use any other language.
 """
         performStreamedRequest(
             scenario: scenario,
@@ -111,11 +112,12 @@ IMPORTANT: Write the entire script in \(languageName) (language code: \(speechLo
         existingText: String,
         scenario: AIScenario,
         userPrompt: String,
+        speechLocale: String? = nil,
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
-        let speechLocale = NotchSettings.shared.speechLocale
-        let languageName = Locale(identifier: speechLocale).localizedString(forIdentifier: speechLocale) ?? speechLocale
+        let resolvedLocale = speechLocale ?? NotchSettings.shared.speechLocale
+        let languageName = Locale(identifier: resolvedLocale).localizedString(forIdentifier: resolvedLocale) ?? resolvedLocale
         let fullUserPrompt = """
 Continue the following script from where it left off. Maintain the same tone, style, and format.
 Match the voice and pacing of the existing text. Add natural transitions.
@@ -127,7 +129,7 @@ Existing script:
 
 Continue the script. The user also provided: \(userPrompt)
 
-IMPORTANT: Continue writing in \(languageName) (language code: \(speechLocale)). Do NOT switch to any other language.
+IMPORTANT: Continue writing in \(languageName) (language code: \(resolvedLocale)). Do NOT switch to any other language.
 """
         performStreamedRequest(
             scenario: scenario,
@@ -247,6 +249,7 @@ IMPORTANT: Continue writing in \(languageName) (language code: \(speechLocale)).
         scenario: AIScenario,
         context: String,
         existingText: String,
+        speechLocale: String? = nil,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
         let apiKey = NotchSettings.shared.openAIAPIKey
@@ -263,8 +266,8 @@ IMPORTANT: Continue writing in \(languageName) (language code: \(speechLocale)).
             return
         }
 
-        let speechLocale = NotchSettings.shared.speechLocale
-        let languageName = Locale(identifier: speechLocale).localizedString(forIdentifier: speechLocale) ?? speechLocale
+        let resolvedLocale = speechLocale ?? NotchSettings.shared.speechLocale
+        let languageName = Locale(identifier: resolvedLocale).localizedString(forIdentifier: resolvedLocale) ?? resolvedLocale
         let systemPrompt = scenario.systemPrompt
         let fullUserPrompt = """
 Continue the following script with a NEW section/page that follows naturally.
@@ -279,7 +282,7 @@ Existing script (already read):
 Context/Topic: \(context)
 
 Generate the next page of the script. Maintain the same tone, style, and format. Include [pause] and stage directions.
-IMPORTANT: Write in \(languageName) (language code: \(speechLocale)). Do NOT use any other language.
+IMPORTANT: Write in \(languageName) (language code: \(resolvedLocale)). Do NOT use any other language.
 """
 
         let body: [String: Any] = [

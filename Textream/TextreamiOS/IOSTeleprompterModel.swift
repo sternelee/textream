@@ -49,6 +49,7 @@ final class IOSTeleprompterModel {
     var speechLocale: IOSSpeechLocaleOption = .system {
         didSet {
             persistReaderSettingsIfNeeded()
+            UserDefaults.standard.set(speechLocale.localeIdentifier, forKey: "speechLocale")
             guard isReaderPresented, session.mode == .wordTracking else { return }
             wordTracker.start(
                 with: document.currentPageText,

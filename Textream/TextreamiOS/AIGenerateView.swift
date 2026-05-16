@@ -310,6 +310,7 @@ struct AIGenerateView: View {
         AIScriptService.shared.generate(
             scenario: selectedScenario,
             userPrompt: prompt,
+            speechLocale: model.speechLocale.localeIdentifier,
             onUpdate: { text in
                 generatedText = text
             },
@@ -343,6 +344,7 @@ struct AIGenerateView: View {
             existingText: baseText,
             scenario: selectedScenario,
             userPrompt: prompt,
+            speechLocale: model.speechLocale.localeIdentifier,
             onUpdate: { text in
                 generatedText = baseText + text
             },

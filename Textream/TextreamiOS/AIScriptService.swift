@@ -103,14 +103,18 @@ class AIScriptService {
     func generate(
         scenario: AIScenario,
         userPrompt: String,
+        speechLocale: String? = nil,
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
+        let resolvedLocale = speechLocale ?? Locale.autoupdatingCurrent.identifier
+        let languageName = Locale(identifier: resolvedLocale).localizedString(forIdentifier: resolvedLocale) ?? resolvedLocale
         let fullUserPrompt = """
 Scenario: \(scenario.label)
 \(userPrompt)
 
 Generate a complete script suitable for reading on a teleprompter. Keep it natural and conversational.
+IMPORTANT: Write the entire script in \(languageName) (language code: \(resolvedLocale)). Do NOT use any other language.
 """
         performStreamedRequest(
             scenario: scenario,
@@ -125,9 +129,12 @@ Generate a complete script suitable for reading on a teleprompter. Keep it natur
         existingText: String,
         scenario: AIScenario,
         userPrompt: String,
+        speechLocale: String? = nil,
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
+        let resolvedLocale = speechLocale ?? Locale.autoupdatingCurrent.identifier
+        let languageName = Locale(identifier: resolvedLocale).localizedString(forIdentifier: resolvedLocale) ?? resolvedLocale
         let fullUserPrompt = """
 Continue the following script from where it left off. Maintain the same tone, style, and format.
 Match the voice and pacing of the existing text. Add natural transitions.
@@ -138,6 +145,8 @@ Existing script:
 ---
 
 Continue the script. The user also provided: \(userPrompt)
+
+IMPORTANT: Continue writing in \(languageName) (language code: \(resolvedLocale)). Do NOT switch to any other language.
 """
         performStreamedRequest(
             scenario: scenario,
