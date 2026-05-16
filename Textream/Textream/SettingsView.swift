@@ -691,6 +691,7 @@ struct SettingsView: View {
     // MARK: - Guidance Tab
 
     private var guidanceTab: some View {
+        ScrollView(.vertical, showsIndicators: false) {
         VStack(alignment: .leading, spacing: 14) {
             Picker("", selection: $settings.listeningMode) {
                 ForEach(ListeningMode.allCases) { mode in
@@ -836,6 +837,7 @@ struct SettingsView: View {
             Spacer()
         }
         .padding(16)
+        } // ScrollView
         .onAppear { availableMics = AudioInputDevice.allInputDevices() }
     }
 
