@@ -89,11 +89,14 @@ class AIScriptService {
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
+        let speechLocale = NotchSettings.shared.speechLocale
+        let languageName = Locale(identifier: speechLocale).localizedString(forIdentifier: speechLocale) ?? speechLocale
         let fullUserPrompt = """
 Scenario: \(scenario.label)
 \(userPrompt)
 
 Generate a complete script suitable for reading on a teleprompter. Keep it natural and conversational.
+IMPORTANT: Write the entire script in \(languageName) (language code: \(speechLocale)). Do NOT use any other language.
 """
         performStreamedRequest(
             scenario: scenario,
@@ -111,6 +114,8 @@ Generate a complete script suitable for reading on a teleprompter. Keep it natur
         onUpdate: @escaping (String) -> Void,
         onComplete: @escaping (Result<String, AIScriptError>) -> Void
     ) {
+        let speechLocale = NotchSettings.shared.speechLocale
+        let languageName = Locale(identifier: speechLocale).localizedString(forIdentifier: speechLocale) ?? speechLocale
         let fullUserPrompt = """
 Continue the following script from where it left off. Maintain the same tone, style, and format.
 Match the voice and pacing of the existing text. Add natural transitions.
@@ -121,6 +126,8 @@ Existing script:
 ---
 
 Continue the script. The user also provided: \(userPrompt)
+
+IMPORTANT: Continue writing in \(languageName) (language code: \(speechLocale)). Do NOT switch to any other language.
 """
         performStreamedRequest(
             scenario: scenario,
@@ -256,6 +263,8 @@ Continue the script. The user also provided: \(userPrompt)
             return
         }
 
+        let speechLocale = NotchSettings.shared.speechLocale
+        let languageName = Locale(identifier: speechLocale).localizedString(forIdentifier: speechLocale) ?? speechLocale
         let systemPrompt = scenario.systemPrompt
         let fullUserPrompt = """
 Continue the following script with a NEW section/page that follows naturally.
@@ -270,6 +279,7 @@ Existing script (already read):
 Context/Topic: \(context)
 
 Generate the next page of the script. Maintain the same tone, style, and format. Include [pause] and stage directions.
+IMPORTANT: Write in \(languageName) (language code: \(speechLocale)). Do NOT use any other language.
 """
 
         let body: [String: Any] = [
