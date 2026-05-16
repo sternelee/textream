@@ -35,29 +35,25 @@ struct IOSReaderView: View {
         NavigationStack {
             GeometryReader { proxy in
                 let width = proxy.size.width
-                ScrollViewReader { scrollProxy in
-                    Group {
-                        if prefersWideLayout(for: width) {
-                            wideLayout(width: width, proxy: scrollProxy)
-                        } else {
-                            compactLayout(width: width, proxy: scrollProxy)
-                        }
+                Group {
+                    if prefersWideLayout(for: width) {
+                        wideLayout(width: width)
+                    } else {
+                        compactLayout(width: width)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .background(readerBackground.ignoresSafeArea())
-                    .foregroundStyle(.white)
-                    .toolbar(.hidden, for: .navigationBar)
-                    .onReceive(tickTimer) { _ in
-                        model.tick(deltaSeconds: 0.1)
-                        let now = Date()
-                        let newString = timeFormatter.string(from: now)
-                        if newString != currentTimeString {
-                            currentTimeString = newString
-                        }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(readerBackground.ignoresSafeArea())
+                .foregroundStyle(.white)
+                .toolbar(.hidden, for: .navigationBar)
+                .onReceive(tickTimer) { _ in
+                    model.tick(deltaSeconds: 0.1)
+                    let now = Date()
+                    let newString = timeFormatter.string(from: now)
+                    if newString != currentTimeString {
+                        currentTimeString = newString
                     }
-                    .onChange(of: model.currentWordIndex) { _, newValue in
-                        scrollProxy.scrollTo(newValue, anchor: .center)
-                    }
+                }
                     .onChange(of: model.document.currentPageIndex) { _, _ in
                         let currentPage = model.document.currentPageIndex + 1
                         let totalPages = model.document.pages.count
@@ -84,9 +80,8 @@ struct IOSReaderView: View {
                     .onDisappear {
                         hideControlsTimer?.invalidate()
                     }
-                    .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
-                        model.togglePause()
-                    }
+                .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+                    model.togglePause()
                 }
             }
         }
@@ -112,7 +107,7 @@ struct IOSReaderView: View {
         )
     }
 
-    private func compactLayout(width: CGFloat, proxy: ScrollViewProxy) -> some View {
+    private func compactLayout(width: CGFloat) -> some View {
         VStack(spacing: 14) {
             if !fullImmersion {
                 topBar(compact: isCompactWidth(width))
@@ -132,7 +127,7 @@ struct IOSReaderView: View {
         .padding(.vertical, 18)
     }
 
-    private func wideLayout(width: CGFloat, proxy: ScrollViewProxy) -> some View {
+    private func wideLayout(width: CGFloat) -> some View {
         HStack(alignment: .top, spacing: 18) {
             VStack(spacing: 16) {
                 if !fullImmersion {
@@ -372,38 +367,25 @@ struct IOSReaderView: View {
 
     private func teleprompterGrid(compact: Bool, maxTextWidth: CGFloat) -> some View {
         ZStack {
-            ScrollView {
-                FlowLayout(
-                    horizontalSpacing: compact ? 8 : 10,
-                    verticalSpacing: CGFloat((compact ? 10 : 12) * model.readerLineSpacing),
-                    maxWidth: maxTextWidth
-                ) {
-                    ForEach(Array(model.currentWords.enumerated()), id: \.offset) { index, word in
-                        WordButtonView(
-                            word: word,
-                            isCurrent: index == model.currentWordIndex,
-                            isPast: index < model.currentWordIndex,
-                            fontSize: model.readerFontSize,
-                            fontDesign: model.readerFontFamily.fontDesign,
-                            highlightTint: model.highlightColorPreset.tint,
-                            softBackground: model.highlightColorPreset.softBackground,
-                            compact: compact,
-                            onTap: { model.jumpToWord(index: index) },
-                            onSpeak: { model.speakWord(word) },
-                            onLookup: {
-                                selectedWordForLookup = word
-                                showPhoneticTooltip = true
-                            },
-                            phoneticEnabled: model.phoneticTooltipEnabled
-                        )
-                        .id(index)
-                    }
+            LazyWordsView(
+                words: model.currentWords,
+                currentWordIndex: model.currentWordIndex,
+                maxWidth: maxTextWidth,
+                compact: compact,
+                fontSize: model.readerFontSize,
+                fontFamily: model.readerFontFamily,
+                lineSpacing: model.readerLineSpacing,
+                highlightTint: model.highlightColorPreset.tint,
+                softBackground: model.highlightColorPreset.softBackground,
+                mirrorEnabled: model.mirrorModeEnabled,
+                phoneticEnabled: model.phoneticTooltipEnabled,
+                onTapWord: { model.jumpToWord(index: $0) },
+                onSpeakWord: { model.speakWord($0) },
+                onLookupWord: { word in
+                    selectedWordForLookup = word
+                    showPhoneticTooltip = true
                 }
-                .frame(maxWidth: maxTextWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(14)
-            }
-            .scaleEffect(x: model.mirrorModeEnabled ? -1 : 1, y: 1)
+            )
 
             VStack(spacing: 0) {
                 topFadeGradient
@@ -1109,68 +1091,6 @@ struct IOSReaderView: View {
         .opacity(disabled ? 0.42 : 1)
     }
 
-    private struct WordButtonView: View {
-        let word: String
-        let isCurrent: Bool
-        let isPast: Bool
-        let fontSize: Double
-        let fontDesign: Font.Design?
-        let highlightTint: Color
-        let softBackground: Color
-        let compact: Bool
-        let onTap: () -> Void
-        let onSpeak: () -> Void
-        let onLookup: () -> Void
-        let phoneticEnabled: Bool
-
-        @State private var isPressed = false
-
-        var body: some View {
-            Button(action: {
-                isPressed = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    isPressed = false
-                }
-                onTap()
-            }) {
-                Text(word)
-                    .font(.system(size: fontSize, weight: isCurrent ? .bold : .semibold, design: fontDesign))
-                    .lineLimit(1)
-                    .multilineTextAlignment(.leading)
-                    .padding(.horizontal, compact ? 8 : 10)
-                    .padding(.vertical, compact ? 7 : 8)
-                    .background(backgroundColor)
-                    .foregroundStyle(foregroundColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .scaleEffect(isPressed ? 1.15 : 1.0)
-                    .animation(.easeOut(duration: 0.15), value: isPressed)
-            }
-            .buttonStyle(.plain)
-            .contextMenu {
-                Button(action: onSpeak) {
-                    Label("Speak", systemImage: "speaker.wave.2")
-                }
-                if phoneticEnabled {
-                    Button(action: onLookup) {
-                        Label("Lookup", systemImage: "text.magnifyingglass")
-                    }
-                }
-            }
-        }
-
-        private var backgroundColor: Color {
-            if isPast { return .white.opacity(0.08) }
-            if isCurrent { return softBackground }
-            return .clear
-        }
-
-        private var foregroundColor: Color {
-            if isPast { return .white.opacity(0.42) }
-            if isCurrent { return highlightTint }
-            return .white
-        }
-    }
-
     private func teleprompterColumns(for width: CGFloat) -> [GridItem] {
         let minimum = width > 760 ? 120 : (width < 390 ? 58 : 72)
         return [GridItem(.adaptive(minimum: CGFloat(minimum)), spacing: width < 390 ? 8 : 10)]
@@ -1187,6 +1107,201 @@ struct IOSReaderView: View {
     private func horizontalPadding(for width: CGFloat) -> CGFloat {
         if width < 390 { return 12 }
         return 16
+    }
+}
+
+// MARK: - LazyWordsView
+
+private struct LazyWordsView: View {
+    let words: [String]
+    let currentWordIndex: Int
+    let maxWidth: CGFloat
+    let compact: Bool
+    let fontSize: Double
+    let fontFamily: IOSReaderFontFamily
+    let lineSpacing: Double
+    let highlightTint: Color
+    let softBackground: Color
+    let mirrorEnabled: Bool
+    let phoneticEnabled: Bool
+    let onTapWord: (Int) -> Void
+    let onSpeakWord: (String) -> Void
+    let onLookupWord: (String) -> Void
+
+    @State private var rows: [[Int]] = []
+    @State private var wordToRow: [Int: Int] = [:]
+
+    private var hSpacing: CGFloat { compact ? 8 : 10 }
+    private var vSpacing: CGFloat { CGFloat((compact ? 10.0 : 12.0) * lineSpacing) }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: vSpacing) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { rowIdx, rowIndices in
+                        HStack(spacing: hSpacing) {
+                            ForEach(rowIndices, id: \.self) { wordIdx in
+                                WordButtonView(
+                                    word: words[wordIdx],
+                                    isCurrent: wordIdx == currentWordIndex,
+                                    isPast: wordIdx < currentWordIndex,
+                                    fontSize: fontSize,
+                                    fontDesign: fontFamily.fontDesign,
+                                    highlightTint: highlightTint,
+                                    softBackground: softBackground,
+                                    compact: compact,
+                                    onTap: { onTapWord(wordIdx) },
+                                    onSpeak: { onSpeakWord(words[wordIdx]) },
+                                    onLookup: { onLookupWord(words[wordIdx]) },
+                                    phoneticEnabled: phoneticEnabled
+                                )
+                                .id(wordIdx)
+                            }
+                        }
+                        .id("r\(rowIdx)")
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scaleEffect(x: mirrorEnabled ? -1 : 1, y: 1)
+            .onChange(of: currentWordIndex) { _, newIdx in
+                if let rowIdx = wordToRow[newIdx] {
+                    proxy.scrollTo("r\(rowIdx)", anchor: .center)
+                }
+            }
+        }
+        .onAppear { rebuildRows() }
+        .onChange(of: words) { _, _ in rebuildRows() }
+        .onChange(of: fontSize) { _, _ in rebuildRows() }
+        .onChange(of: maxWidth) { _, _ in rebuildRows() }
+    }
+
+    private func rebuildRows() {
+        let available = max(1, maxWidth - 28)
+        let hPad = CGFloat((compact ? 8 : 10) * 2)
+        let hSpac = hSpacing
+        let font = makeFont()
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+
+        var newRows: [[Int]] = []
+        var newWordToRow: [Int: Int] = [:]
+        var currentRow: [Int] = []
+        var currentX: CGFloat = 0
+
+        for (idx, word) in words.enumerated() {
+            let tw = ceil((word as NSString).size(withAttributes: attrs).width)
+            let bw = tw + hPad
+            let wouldFit = currentRow.isEmpty
+                ? bw <= available
+                : currentX + hSpac + bw <= available
+
+            if wouldFit {
+                currentX = currentRow.isEmpty ? bw : currentX + hSpac + bw
+                currentRow.append(idx)
+            } else {
+                if !currentRow.isEmpty {
+                    let ri = newRows.count
+                    currentRow.forEach { newWordToRow[$0] = ri }
+                    newRows.append(currentRow)
+                }
+                currentRow = [idx]
+                currentX = bw
+            }
+        }
+        if !currentRow.isEmpty {
+            let ri = newRows.count
+            currentRow.forEach { newWordToRow[$0] = ri }
+            newRows.append(currentRow)
+        }
+
+        rows = newRows
+        wordToRow = newWordToRow
+    }
+
+    private func makeFont() -> UIFont {
+        let size = fontSize
+        switch fontFamily {
+        case .rounded:
+            let base = UIFont.systemFont(ofSize: size)
+            if let desc = base.fontDescriptor.withDesign(.rounded) {
+                return UIFont(descriptor: desc, size: size)
+            }
+            return UIFont.systemFont(ofSize: size, weight: .semibold)
+        case .serif:
+            let base = UIFont.systemFont(ofSize: size)
+            if let desc = base.fontDescriptor.withDesign(.serif) {
+                return UIFont(descriptor: desc, size: size)
+            }
+            return UIFont.systemFont(ofSize: size, weight: .semibold)
+        case .monospaced:
+            return UIFont.monospacedSystemFont(ofSize: size, weight: .semibold)
+        default:
+            return UIFont.systemFont(ofSize: size, weight: .semibold)
+        }
+    }
+}
+
+// MARK: - WordButtonView
+
+private struct WordButtonView: View {
+    let word: String
+    let isCurrent: Bool
+    let isPast: Bool
+    let fontSize: Double
+    let fontDesign: Font.Design?
+    let highlightTint: Color
+    let softBackground: Color
+    let compact: Bool
+    let onTap: () -> Void
+    let onSpeak: () -> Void
+    let onLookup: () -> Void
+    let phoneticEnabled: Bool
+
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: {
+            isPressed = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                isPressed = false
+            }
+            onTap()
+        }) {
+            Text(word)
+                .font(.system(size: fontSize, weight: isCurrent ? .bold : .semibold, design: fontDesign))
+                .lineLimit(1)
+                .padding(.horizontal, compact ? 8 : 10)
+                .padding(.vertical, compact ? 7 : 8)
+                .background(backgroundColor)
+                .foregroundStyle(foregroundColor)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .scaleEffect(isPressed ? 1.15 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: isPressed)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(action: onSpeak) {
+                Label("Speak", systemImage: "speaker.wave.2")
+            }
+            if phoneticEnabled {
+                Button(action: onLookup) {
+                    Label("Lookup", systemImage: "text.magnifyingglass")
+                }
+            }
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isPast { return .white.opacity(0.08) }
+        if isCurrent { return softBackground }
+        return .clear
+    }
+
+    private var foregroundColor: Color {
+        if isPast { return .white.opacity(0.42) }
+        if isCurrent { return highlightTint }
+        return .white
     }
 }
 
