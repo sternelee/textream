@@ -170,9 +170,15 @@ enum IOSTeleprompterSample: String, CaseIterable, Identifiable {
     }
 }
 
+enum IOSReaderFontSizing {
+    static let minimum: Double = 18
+    static let maximum: Double = 64
+    static let `default`: Double = 34
+}
+
 struct IOSPersistedReaderSettings: Codable, Equatable {
     var selectedMode: TeleprompterMode = .classic
-    var fontSize: Double = 34
+    var fontSize: Double = IOSReaderFontSizing.default
     var fontFamily: IOSReaderFontFamily = .rounded
     var highlightColor: IOSHighlightColorPreset = .amber
     var scrollSpeedWordsPerSecond: Double = 2.0
@@ -184,7 +190,7 @@ struct IOSPersistedReaderSettings: Codable, Equatable {
     var forceDarkMode: Bool = true
     var phoneticTooltipEnabled: Bool = true
     var nativeLanguage: String = "zh"
-    var phoneticSource: PhoneticSource = .aiGenerated
+    var phoneticSource: PhoneticSource = .localDictionary
 }
 
 struct IOSDraftState: Codable, Equatable {

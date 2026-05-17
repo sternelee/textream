@@ -20,7 +20,6 @@ class PhoneticTooltipService {
     static let shared = PhoneticTooltipService()
 
     private var cache: [String: PhoneticResult] = [:]
-    private var pendingRequests: Set<String> = []
 
     /// Called when a result is ready
     var onResult: ((PhoneticResult?) -> Void)?
@@ -28,82 +27,37 @@ class PhoneticTooltipService {
     private init() {}
 
     func fetchHint(for word: String, targetLanguage: String = "zh", source: PhoneticSource = .aiGenerated) {
-        let key = cacheKey(word: word, lang: targetLanguage, source: source)
-
-        if let cached = cache[key] {
-            DispatchQueue.main.async { self.onResult?(cached) }
-            return
-        }
-
-        let localIPA = getIPAPhonetic(for: word)
-
-        switch source {
-        case .localDictionary:
-            if !localIPA.us.isEmpty || !localIPA.uk.isEmpty {
-                let result = PhoneticResult(
-                    word: word,
-                    phonetic: localIPA.us,
-                    phoneticUK: localIPA.uk,
-                    translation: "",
-                    pronunciation: ""
-                )
-                cache[key] = result
-                DispatchQueue.main.async { self.onResult?(result) }
-            } else {
-                DispatchQueue.main.async { self.onResult?(nil) }
-            }
-            return
-        case .aiGenerated:
-            if !localIPA.us.isEmpty || !localIPA.uk.isEmpty {
-                let localResult = PhoneticResult(
-                    word: word,
-                    phonetic: localIPA.us,
-                    phoneticUK: localIPA.uk,
-                    translation: "",
-                    pronunciation: ""
-                )
-                cache[key] = localResult
-                DispatchQueue.main.async { self.onResult?(localResult) }
-            }
-
-            guard !pendingRequests.contains(key) else { return }
-            pendingRequests.insert(key)
-
-            AIScriptService.shared.generatePhonetic(word: word, targetLanguage: targetLanguage) { [weak self] result in
-                self?.pendingRequests.remove(key)
-                guard let self else { return }
-                switch result {
-                case .success(let parsed):
-                    let ipa = parsed.ipa.isEmpty ? localIPA.us : parsed.ipa
-                    let translation = parsed.translation
-                    let pronunciation = parsed.pronunciation
-                    if translation.isEmpty && pronunciation.isEmpty && !localIPA.us.isEmpty {
-                        return
-                    }
-                    let final = PhoneticResult(
-                        word: word,
-                        phonetic: ipa,
-                        phoneticUK: parsed.ukIPA,
-                        translation: translation,
-                        pronunciation: pronunciation
-                    )
-                    self.cache[key] = final
-                    DispatchQueue.main.async { self.onResult?(final) }
-                case .failure:
-                    if !localIPA.us.isEmpty { return }
-                    DispatchQueue.main.async { self.onResult?(nil) }
-                }
+        Task {
+            let result = await fetchHintAsync(for: word, targetLanguage: targetLanguage, source: source)
+            DispatchQueue.main.async {
+                self.onResult?(result)
             }
         }
     }
 
     func fetchHintAsync(for word: String, targetLanguage: String = "zh", source: PhoneticSource = .aiGenerated) async -> PhoneticResult? {
-        await withCheckedContinuation { continuation in
-            onResult = { res in
-                continuation.resume(returning: res)
-            }
-            fetchHint(for: word, targetLanguage: targetLanguage, source: source)
+        let displayWord = normalizedDisplayWord(from: word)
+        guard !displayWord.isEmpty else { return nil }
+
+        let key = cacheKey(word: displayWord, lang: targetLanguage, source: source)
+        if let cached = cache[key] {
+            return cached
         }
+
+        let localIPA = getIPAPhonetic(for: displayWord)
+
+        let resolved: PhoneticResult?
+        switch source {
+        case .localDictionary:
+            resolved = await resolveLocalDictionaryHint(for: displayWord, targetLanguage: targetLanguage, localIPA: localIPA)
+        case .aiGenerated:
+            resolved = await resolveAIHint(for: displayWord, targetLanguage: targetLanguage, localIPA: localIPA)
+        }
+
+        if let resolved {
+            cache[key] = resolved
+        }
+        return resolved
     }
 
     func clearCache() {
@@ -112,6 +66,186 @@ class PhoneticTooltipService {
 
     private func cacheKey(word: String, lang: String, source: PhoneticSource) -> String {
         "phonetic_\(source.rawValue)_\(lang)_\(word.lowercased())"
+    }
+
+    private func resolveLocalDictionaryHint(for word: String, targetLanguage: String, localIPA: IPALookup) async -> PhoneticResult? {
+        if let localOnly = makeLocalOnlyResult(for: word, localIPA: localIPA) {
+            return localOnly
+        }
+        return await fetchOnlineDictionaryHint(for: word, targetLanguage: targetLanguage, localIPA: localIPA)
+    }
+
+    private func resolveAIHint(for word: String, targetLanguage: String, localIPA: IPALookup) async -> PhoneticResult? {
+        if AIScriptService.shared.hasAPIKey,
+           let aiResult = await fetchAIHint(for: word, targetLanguage: targetLanguage, localIPA: localIPA) {
+            return aiResult
+        }
+
+        if let onlineResult = await fetchOnlineDictionaryHint(for: word, targetLanguage: targetLanguage, localIPA: localIPA) {
+            return onlineResult
+        }
+
+        return makeLocalOnlyResult(for: word, localIPA: localIPA)
+    }
+
+    private func makeLocalOnlyResult(for word: String, localIPA: IPALookup) -> PhoneticResult? {
+        guard !localIPA.us.isEmpty || !localIPA.uk.isEmpty else { return nil }
+        return PhoneticResult(
+            word: word,
+            phonetic: localIPA.us,
+            phoneticUK: localIPA.uk,
+            translation: "",
+            pronunciation: ""
+        )
+    }
+
+    private func fetchAIHint(for word: String, targetLanguage: String, localIPA: IPALookup) async -> PhoneticResult? {
+        let parsed: (ipa: String, ukIPA: String, translation: String, pronunciation: String)? = await withCheckedContinuation { continuation in
+            AIScriptService.shared.generatePhonetic(word: word, targetLanguage: targetLanguage) { result in
+                switch result {
+                case .success(let parsed):
+                    continuation.resume(returning: parsed)
+                case .failure:
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+
+        guard let parsed else { return nil }
+
+        let ipa = normalizeIPA(parsed.ipa) ?? localIPA.us
+        let ukIPA = normalizeIPA(parsed.ukIPA) ?? localIPA.uk
+        let translation = parsed.translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pronunciation = parsed.pronunciation.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if ipa.isEmpty && ukIPA.isEmpty && translation.isEmpty && pronunciation.isEmpty {
+            return nil
+        }
+
+        return PhoneticResult(
+            word: word,
+            phonetic: ipa,
+            phoneticUK: ukIPA,
+            translation: translation,
+            pronunciation: pronunciation
+        )
+    }
+
+    private func fetchOnlineDictionaryHint(for word: String, targetLanguage: String, localIPA: IPALookup) async -> PhoneticResult? {
+        for candidate in lookupCandidates(for: word) {
+            guard let encoded = candidate.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+                  let url = URL(string: "https://api.dictionaryapi.dev/api/v2/entries/en/\(encoded)") else {
+                continue
+            }
+
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    continue
+                }
+
+                let entries = try JSONDecoder().decode([DictionaryEntry].self, from: data)
+                if let result = makeOnlineResult(from: entries, displayWord: word, targetLanguage: targetLanguage, localIPA: localIPA) {
+                    return result
+                }
+            } catch {
+                continue
+            }
+        }
+
+        return nil
+    }
+
+    private func makeOnlineResult(from entries: [DictionaryEntry], displayWord: String, targetLanguage: String, localIPA: IPALookup) -> PhoneticResult? {
+        guard let first = entries.first else { return nil }
+
+        let phoneticCandidates = ([first.phonetic] + first.phonetics.map(\ .text))
+            .compactMap { $0 }
+            .compactMap(normalizeIPA)
+
+        let primaryIPA = phoneticCandidates.first(where: { !$0.isEmpty }) ?? localIPA.us
+        let secondaryIPA = phoneticCandidates.first(where: { !$0.isEmpty && $0 != primaryIPA }) ?? localIPA.uk
+
+        let firstMeaning = first.meanings.first
+        let firstDefinition = firstMeaning?.definitions.first
+        let partOfSpeech = firstMeaning?.partOfSpeech?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let definitionText = firstDefinition?.definition?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let example = firstDefinition?.example?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        var meaning = definitionText
+        if let partOfSpeech, !partOfSpeech.isEmpty, !definitionText.isEmpty {
+            meaning = "\(partOfSpeech) · \(definitionText)"
+        }
+
+        let pronunciationGuide: String
+        if !example.isEmpty {
+            pronunciationGuide = "Example: \(example)"
+        } else {
+            pronunciationGuide = ""
+        }
+
+        if primaryIPA.isEmpty && secondaryIPA.isEmpty && meaning.isEmpty && pronunciationGuide.isEmpty {
+            return nil
+        }
+
+        return PhoneticResult(
+            word: displayWord,
+            phonetic: primaryIPA,
+            phoneticUK: secondaryIPA,
+            translation: meaning,
+            pronunciation: pronunciationGuide
+        )
+    }
+
+    private func normalizedDisplayWord(from word: String) -> String {
+        word
+            .trimmingCharacters(in: CharacterSet.punctuationCharacters.union(.whitespacesAndNewlines))
+            .replacingOccurrences(of: "^[‘’'\"]+|[‘’'\"]+$", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "[’']s$", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func lookupCandidates(for word: String) -> [String] {
+        let trimmed = normalizedDisplayWord(from: word)
+        guard !trimmed.isEmpty else { return [] }
+
+        var candidates: [String] = [trimmed]
+        let lowercased = trimmed.lowercased()
+        if lowercased != trimmed {
+            candidates.append(lowercased)
+        }
+        return Array(NSOrderedSet(array: candidates)) as? [String] ?? candidates
+    }
+
+    private func normalizeIPA(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("/") || trimmed.hasPrefix("[") {
+            return trimmed
+        }
+        return "/\(trimmed)/"
+    }
+
+    private struct DictionaryEntry: Decodable {
+        let word: String?
+        let phonetic: String?
+        let phonetics: [DictionaryPhonetic]
+        let meanings: [DictionaryMeaning]
+    }
+
+    private struct DictionaryPhonetic: Decodable {
+        let text: String?
+    }
+
+    private struct DictionaryMeaning: Decodable {
+        let partOfSpeech: String?
+        let definitions: [DictionaryDefinition]
+    }
+
+    private struct DictionaryDefinition: Decodable {
+        let definition: String?
+        let example: String?
     }
 
     private struct IPALookup { let us: String; let uk: String }
@@ -165,6 +299,7 @@ class PhoneticTooltipService {
         "some": .init(us: "/sʌm/", uk: "/sʌm/"),
         "should": .init(us: "/ʃʊd/", uk: "/ʃʊd/"),
         "these": .init(us: "/ðiːz/", uk: "/ðiːz/"),
+        "iphone": .init(us: "/ˈaɪfoʊn/", uk: "/ˈaɪfəʊn/"),
         "entrepreneur": .init(us: "/ˌɒntrəprəˈnɜːr/", uk: "/ˌɒntrəprəˈnɜː/"),
         "miscellaneous": .init(us: "/ˌmɪsəˈleɪniəs/", uk: "/ˌmɪsəˈleɪniəs/"),
         "necessary": .init(us: "/ˈnesəseri/", uk: "/ˈnesəsəri/"),

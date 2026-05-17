@@ -41,7 +41,7 @@ struct IOSSettingsView: View {
                             Text("\(Int(model.readerFontSize)) pt")
                                 .foregroundStyle(.secondary)
                         }
-                        Slider(value: $model.readerFontSize, in: 24...64, step: 2)
+                        Slider(value: $model.readerFontSize, in: IOSReaderFontSizing.minimum...IOSReaderFontSizing.maximum, step: 1)
                             .tint(model.highlightColorPreset.tint)
                     }
 

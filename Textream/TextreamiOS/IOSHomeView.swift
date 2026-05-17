@@ -427,7 +427,7 @@ struct IOSHomeView: View {
 
     private func editorCard(compact: Bool) -> some View {
         surfaceCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: compact ? 8 : 14) {
                 HStack(alignment: .center, spacing: 8) {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Script Title", text: $model.document.title)
@@ -454,7 +454,9 @@ struct IOSHomeView: View {
                     editorToolbar(compact: compact)
                 }
 
-                tagRow()
+                if !compact || !model.document.tags.isEmpty {
+                    tagRow()
+                }
 
                 HStack(spacing: 10) {
                     compactPageButton(title: "Prev", systemImage: "chevron.left", disabled: !model.document.hasPreviousPage) {
@@ -469,8 +471,8 @@ struct IOSHomeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                // Outline & Mini-map
-                if !model.document.currentPageText.isEmpty {
+                // Outline & Mini-map — skip on compact screens to reclaim vertical space
+                if !compact, !model.document.currentPageText.isEmpty {
                     VStack(spacing: 10) {
                         ScriptOutlineView(
                             text: model.document.currentPageText,
@@ -494,7 +496,7 @@ struct IOSHomeView: View {
                 .scrollContentBackground(.hidden)
                 .font(.body)
                 .foregroundStyle(.white)
-                .frame(minHeight: compact ? 240 : 320)
+                .frame(minHeight: compact ? 50 : 280)
                 .padding(12)
                 .background(Color.white.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 18))

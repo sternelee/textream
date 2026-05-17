@@ -15,6 +15,8 @@ struct PhoneticTooltipView: View {
     @State private var result: PhoneticResult?
     @State private var isLoading = true
     @State private var isSpeaking = false
+    @State private var emptyStateMessage = "No result found"
+    @State private var usedFallbackSource = false
     @Environment(\.dismiss) private var dismiss
 
     private let synthesizer = AVSpeechSynthesizer()
@@ -96,7 +98,7 @@ struct PhoneticTooltipView: View {
 
                         if !result.translation.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Translation")
+                                Text("Meaning / Translation")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(.secondary)
                                     .textCase(.uppercase)
@@ -111,7 +113,7 @@ struct PhoneticTooltipView: View {
 
                         if !result.pronunciation.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
-                                Text("Pronunciation Guide")
+                                Text("Guide / Example")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(.secondary)
                                     .textCase(.uppercase)
@@ -131,12 +133,19 @@ struct PhoneticTooltipView: View {
                             Image(systemName: "exclamationmark.circle")
                                 .font(.system(size: 40))
                                 .foregroundStyle(.secondary.opacity(0.5))
-                            Text("No result found")
+                            Text(emptyStateMessage)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 40)
+                    }
+                
+                    if usedFallbackSource {
+                        Text("AI lookup is not configured on this device, so Textream is using the built-in dictionary plus free online dictionary coverage when available.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(20)
@@ -158,7 +167,21 @@ struct PhoneticTooltipView: View {
     private func loadPhonetic() async {
         isLoading = true
         result = nil
-        result = await PhoneticTooltipService.shared.fetchHintAsync(for: word, targetLanguage: nativeLanguage, source: phoneticSource)
+        emptyStateMessage = "No result found"
+
+        let requestedAI = phoneticSource == .aiGenerated
+        let hasAPIKey = AIScriptService.shared.hasAPIKey
+        let effectiveSource: PhoneticSource = requestedAI && !hasAPIKey ? .localDictionary : phoneticSource
+        usedFallbackSource = requestedAI && !hasAPIKey
+
+        result = await PhoneticTooltipService.shared.fetchHintAsync(for: word, targetLanguage: nativeLanguage, source: effectiveSource)
+        if result == nil {
+            if usedFallbackSource {
+                emptyStateMessage = "No dictionary result for this word yet. Add an OpenAI API key in Settings → AI for richer translation results."
+            } else if effectiveSource == .localDictionary {
+                emptyStateMessage = "No built-in or online dictionary result for this word. Switch Phonetic Source to AI Generated for richer results."
+            }
+        }
         isLoading = false
     }
 

@@ -6,9 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		99BB00042F3A000100AF141F /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 99BB00022F3A000100AF141F /* XCTest.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		446966B42F37E47300AF141F /* Textream.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Textream.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		88AA00112F37E47300AF141F /* TextreamiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TextreamiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		99BB00012F3A000100AF141F /* TextreamTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TextreamTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		99BB00022F3A000100AF141F /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -40,6 +46,11 @@
 			path = TextreamiOS;
 			sourceTree = "<group>";
 		};
+		99BB00032F3A000100AF141F /* TextreamTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TextreamTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +68,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		99BB00052F3A000100AF141F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99BB00042F3A000100AF141F /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -66,6 +85,7 @@
 				446966B62F37E47300AF141F /* Textream */,
 				88AA00122F37E47300AF141F /* Textream/Core */,
 				88AA00132F37E47300AF141F /* TextreamiOS */,
+				99BB00032F3A000100AF141F /* TextreamTests */,
 				446966B52F37E47300AF141F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -75,6 +95,7 @@
 			children = (
 				446966B42F37E47300AF141F /* Textream.app */,
 				88AA00112F37E47300AF141F /* TextreamiOS.app */,
+				99BB00012F3A000100AF141F /* TextreamTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -127,6 +148,29 @@
 			productReference = 88AA00112F37E47300AF141F /* TextreamiOS.app */;
 			productType = "com.apple.product-type.application";
 		};
+		99BB00082F3A000100AF141F /* TextreamTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 99BB000B2F3A000100AF141F /* Build configuration list for PBXNativeTarget "TextreamTests" */;
+			buildPhases = (
+				99BB00062F3A000100AF141F /* Sources */,
+				99BB00052F3A000100AF141F /* Frameworks */,
+				99BB00072F3A000100AF141F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				88AA00122F37E47300AF141F /* Textream/Core */,
+				99BB00032F3A000100AF141F /* TextreamTests */,
+			);
+			name = TextreamTests;
+			packageProductDependencies = (
+			);
+			productName = TextreamTests;
+			productReference = 99BB00012F3A000100AF141F /* TextreamTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -141,6 +185,9 @@
 						CreatedOnToolsVersion = 26.2;
 					};
 					88AA00152F37E47300AF141F = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					99BB00082F3A000100AF141F = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -161,6 +208,7 @@
 			targets = (
 				446966B32F37E47300AF141F /* Textream */,
 				88AA00152F37E47300AF141F /* TextreamiOS */,
+				99BB00082F3A000100AF141F /* TextreamTests */,
 			);
 		};
 /* End PBXProject section */
@@ -180,6 +228,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		99BB00072F3A000100AF141F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -191,6 +246,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		88AA00172F37E47300AF141F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99BB00062F3A000100AF141F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -466,6 +528,52 @@
 			};
 			name = Release;
 		};
+		99BB00092F3A000100AF141F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UJ8NW4N779;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.leeapp.textream.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		99BB000A2F3A000100AF141F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UJ8NW4N779;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.leeapp.textream.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -492,6 +600,15 @@
 			buildConfigurations = (
 				88AA00192F37E47300AF141F /* Debug */,
 				88AA00202F37E47300AF141F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		99BB000B2F3A000100AF141F /* Build configuration list for PBXNativeTarget "TextreamTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99BB00092F3A000100AF141F /* Debug */,
+				99BB000A2F3A000100AF141F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

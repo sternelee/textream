@@ -12,6 +12,10 @@ final class IOSWordTrackingRecognizer {
     var microphonePermissionDenied = false
     var speechPermissionDenied = false
     var currentLocaleIdentifier: String = Locale.current.identifier
+    var trackingDebugMessage: String?
+    var trackingDebugSummary: String? {
+        trackingDebugSnapshot?.summary
+    }
 
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -19,29 +23,55 @@ final class IOSWordTrackingRecognizer {
     private var audioEngine = AVAudioEngine()
     private var matcher = SpeechProgressMatcher()
     private var isStopping = false
-    private var processedTranscript: String = ""
+    private var contextualHints: [String] = []
+    private var previousHypothesisSegments: [RecognizedSegment] = []
+    private var committedSegmentCount = 0
+    private var trackingDebugSnapshot: TrackingDebugSnapshot?
+    private var stalledFingerprint: String?
+    private var stalledCount = 0
+    private var stalledNoAdvanceCount = 0
+    private var activeRecognitionSessionID = UUID()
 
-    func start(with text: String, localeIdentifier: String = Locale.current.identifier, preservingCharCount: Int? = nil) {
+    private enum TrackingTuning {
+        static let maxContextualHints = 80
+        static let minimumSegmentConfidence: Float = 0.35
+        static let stalledRepeatThreshold = 3
+        static let stalledNoAdvanceThreshold = 2
+    }
+
+    func start(
+        with text: String,
+        localeIdentifier: String = Locale.current.identifier,
+        preservingCharCount: Int? = nil,
+        contextualHints: [String] = [],
+        anchorWordIndex: Int? = nil
+    ) {
         stop()
         currentLocaleIdentifier = localeIdentifier
         microphonePermissionDenied = false
         speechPermissionDenied = false
+        self.contextualHints = Self.sanitizedHints(contextualHints, limit: TrackingTuning.maxContextualHints)
         if let preservingCharCount {
             matcher.updateText(text, preservingCharCount: preservingCharCount)
-            recognizedCharCount = matcher.recognizedCharCount
         } else {
             matcher.start(with: text)
-            recognizedCharCount = 0
         }
+        if let anchorWordIndex {
+            matcher.reanchor(nearWordIndex: anchorWordIndex)
+        }
+        recognizedCharCount = matcher.recognizedCharCount
         lastSpokenText = ""
-        processedTranscript = ""
+        trackingDebugMessage = nil
+        trackingDebugSnapshot = nil
         errorMessage = nil
+        resetRecognitionStreamState()
 
         requestPermissionsAndBegin(localeIdentifier: localeIdentifier)
     }
 
     func stop() {
         isStopping = true
+        activeRecognitionSessionID = UUID()
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest?.endAudio()
@@ -51,19 +81,38 @@ final class IOSWordTrackingRecognizer {
         }
         audioEngine.inputNode.removeTap(onBus: 0)
         isListening = false
-        processedTranscript = ""
+        resetRecognitionStreamState()
         audioLevels = Array(repeating: 0, count: 24)
     }
 
     func jumpTo(wordIndex: Int, in words: [String]) {
         let charOffset = Self.charOffset(forWordIndex: wordIndex, in: words)
         matcher.jumpTo(charOffset: charOffset)
+        matcher.reanchor(nearWordIndex: wordIndex)
         recognizedCharCount = matcher.recognizedCharCount
+        trackingDebugMessage = "manual-jump"
+        trackingDebugSnapshot = TrackingDebugSnapshot(
+            reason: "manual-jump",
+            stableSegmentCount: 0,
+            committedSegmentCount: committedSegmentCount,
+            averageConfidence: nil,
+            tailText: nil
+        )
+        resetRecognitionStreamState()
     }
 
     func updateText(_ text: String) {
         matcher.updateText(text, preservingCharCount: recognizedCharCount)
         recognizedCharCount = matcher.recognizedCharCount
+        trackingDebugMessage = "text-updated"
+        trackingDebugSnapshot = TrackingDebugSnapshot(
+            reason: "text-updated",
+            stableSegmentCount: 0,
+            committedSegmentCount: committedSegmentCount,
+            averageConfidence: nil,
+            tailText: nil
+        )
+        resetRecognitionStreamState()
     }
 
     private func requestPermissionsAndBegin(localeIdentifier: String) {
@@ -111,6 +160,8 @@ final class IOSWordTrackingRecognizer {
 
     private func beginRecognition(localeIdentifier: String) {
         isStopping = false
+        let sessionID = UUID()
+        activeRecognitionSessionID = sessionID
         audioEngine = AVAudioEngine()
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
 
@@ -126,6 +177,8 @@ final class IOSWordTrackingRecognizer {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.contextualStrings = contextualHints
+        request.taskHint = .dictation
         recognitionRequest = request
 
         do {
@@ -155,31 +208,30 @@ final class IOSWordTrackingRecognizer {
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
             if let result {
-                let spoken = result.bestTranscription.formattedString
+                let segments = self.extractSegments(from: result)
+                let spokenText = result.bestTranscription.formattedString
                 DispatchQueue.main.async {
-                    self.lastSpokenText = spoken
-                    guard spoken != self.processedTranscript else { return }
-
-                    let incrementalTranscript: String
-                    if self.processedTranscript.isEmpty {
-                        incrementalTranscript = spoken
-                    } else if spoken.hasPrefix(self.processedTranscript) {
-                        incrementalTranscript = String(spoken.dropFirst(self.processedTranscript.count))
-                    } else {
-                        self.matcher.prepareForRestart()
-                        incrementalTranscript = spoken
-                    }
-
-                    if !incrementalTranscript.isEmpty {
-                        self.recognizedCharCount = self.matcher.consume(spoken: incrementalTranscript)
-                    }
-                    self.processedTranscript = spoken
+                    guard self.activeRecognitionSessionID == sessionID else { return }
+                    self.lastSpokenText = spokenText
+                    self.consumeRecognitionResult(segments: segments, spokenText: spokenText, isFinal: result.isFinal)
                 }
             }
 
             if let error {
                 DispatchQueue.main.async {
+                    guard self.activeRecognitionSessionID == sessionID else { return }
                     if self.isStopping { return }
+                    if self.shouldSuppressRecognitionError(error) {
+                        self.trackingDebugMessage = "suppressed-recognition-error"
+                        self.trackingDebugSnapshot = TrackingDebugSnapshot(
+                            reason: "suppressed-recognition-error",
+                            stableSegmentCount: 0,
+                            committedSegmentCount: self.committedSegmentCount,
+                            averageConfidence: nil,
+                            tailText: error.localizedDescription
+                        )
+                        return
+                    }
                     self.errorMessage = error.localizedDescription
                     self.isListening = false
                 }
@@ -195,6 +247,295 @@ final class IOSWordTrackingRecognizer {
             errorMessage = "Failed to start speech audio engine: \(error.localizedDescription)"
             isListening = false
         }
+    }
+
+    private func consumeRecognitionResult(segments: [RecognizedSegment], spokenText: String, isFinal: Bool) {
+        let stableSegments = stableSegmentsToCommit(from: segments, isFinal: isFinal)
+        if stableSegments.isEmpty {
+            let trimmedSpoken = spokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedSpoken.isEmpty {
+                let previousCharCount = recognizedCharCount
+                let previousTokenIndex = matcher.currentTokenIndex
+                let liveDecision = matcher.consumeDecision(spoken: trimmedSpoken)
+                trackingDebugMessage = "live-\(liveDecision.reason)"
+                trackingDebugSnapshot = TrackingDebugSnapshot(
+                    reason: "live-\(liveDecision.reason)",
+                    stableSegmentCount: 0,
+                    committedSegmentCount: committedSegmentCount,
+                    averageConfidence: averageConfidence(for: segments),
+                    tailText: trimmedSpoken
+                )
+                if liveDecision.shouldCommit || liveDecision.charCount > previousCharCount {
+                    let monotonicCharCount = max(previousCharCount, liveDecision.charCount)
+                    recognizedCharCount = monotonicCharCount
+                    if monotonicCharCount > previousCharCount, liveDecision.tokenIndex > previousTokenIndex {
+                        resetStallTracking()
+                        resetNoAdvanceTracking()
+                    } else if matcher.currentTokenIsShort {
+                        let futureMatchAdvance = matcher.advanceToFutureMatchingToken(using: trimmedSpoken)
+                        if futureMatchAdvance > previousCharCount {
+                            recognizedCharCount = futureMatchAdvance
+                            trackingDebugMessage = "future-word-skip"
+                            trackingDebugSnapshot = TrackingDebugSnapshot(
+                                reason: "future-word-skip",
+                                stableSegmentCount: 0,
+                                committedSegmentCount: committedSegmentCount,
+                                averageConfidence: averageConfidence(for: segments),
+                                tailText: trimmedSpoken
+                            )
+                            resetStallTracking()
+                            resetNoAdvanceTracking()
+                        } else if liveDecision.charCount < previousCharCount {
+                            trackingDebugMessage = "ignore-backward-reanchor"
+                            trackingDebugSnapshot = TrackingDebugSnapshot(
+                                reason: "ignore-backward-reanchor",
+                                stableSegmentCount: 0,
+                                committedSegmentCount: committedSegmentCount,
+                                averageConfidence: averageConfidence(for: segments),
+                                tailText: trimmedSpoken
+                            )
+                        }
+                    }
+                } else {
+                    let futureMatchAdvance = matcher.advanceToFutureMatchingToken(using: trimmedSpoken)
+                    if futureMatchAdvance > previousCharCount {
+                        recognizedCharCount = futureMatchAdvance
+                        trackingDebugMessage = "future-word-skip"
+                        trackingDebugSnapshot = TrackingDebugSnapshot(
+                            reason: "future-word-skip",
+                            stableSegmentCount: 0,
+                            committedSegmentCount: committedSegmentCount,
+                            averageConfidence: averageConfidence(for: segments),
+                            tailText: trimmedSpoken
+                        )
+                        resetStallTracking()
+                        resetNoAdvanceTracking()
+                    } else if shouldForceAdvance(for: trimmedSpoken) || shouldForceAdvanceForNoProgress(spokenText: trimmedSpoken, segments: segments) {
+                        let nudged = matcher.nudgeForwardOneToken()
+                        if nudged > previousCharCount {
+                            recognizedCharCount = nudged
+                            trackingDebugMessage = "stall-skip-word"
+                            trackingDebugSnapshot = TrackingDebugSnapshot(
+                                reason: "stall-skip-word",
+                                stableSegmentCount: 0,
+                                committedSegmentCount: committedSegmentCount,
+                                averageConfidence: averageConfidence(for: segments),
+                                tailText: trimmedSpoken
+                            )
+                            resetStallTracking()
+                            resetNoAdvanceTracking()
+                        }
+                    }
+                }
+                return
+            }
+
+            if isFinal {
+                trackingDebugMessage = "final-no-new-segments"
+            }
+            return
+        }
+
+        let previousCharCount = recognizedCharCount
+        let previousTokenIndex = matcher.currentTokenIndex
+        let decision = matcher.consumeSegments(stableSegments.map(\.text))
+        let monotonicCharCount = max(previousCharCount, decision.charCount)
+        recognizedCharCount = monotonicCharCount
+        trackingDebugMessage = monotonicCharCount > previousCharCount ? decision.reason : "ignore-backward-reanchor"
+        trackingDebugSnapshot = TrackingDebugSnapshot(
+            reason: monotonicCharCount > previousCharCount ? decision.reason : "ignore-backward-reanchor",
+            stableSegmentCount: stableSegments.count,
+            committedSegmentCount: committedSegmentCount,
+            averageConfidence: averageConfidence(for: stableSegments),
+            tailText: stableSegments.suffix(2).map(\.text).joined(separator: " ")
+        )
+        let tailText = stableSegments.suffix(3).map(\.text).joined(separator: " ")
+        if monotonicCharCount > previousCharCount {
+            if decision.tokenIndex > previousTokenIndex {
+                resetStallTracking()
+                resetNoAdvanceTracking()
+            } else if matcher.currentTokenIsShort {
+                let futureMatchAdvance = matcher.advanceToFutureMatchingToken(using: tailText)
+                if futureMatchAdvance > previousCharCount {
+                    recognizedCharCount = futureMatchAdvance
+                    trackingDebugMessage = "future-word-skip"
+                    trackingDebugSnapshot = TrackingDebugSnapshot(
+                        reason: "future-word-skip",
+                        stableSegmentCount: stableSegments.count,
+                        committedSegmentCount: committedSegmentCount,
+                        averageConfidence: averageConfidence(for: stableSegments),
+                        tailText: tailText
+                    )
+                    resetStallTracking()
+                    resetNoAdvanceTracking()
+                }
+            }
+        } else {
+            let futureMatchAdvance = matcher.advanceToFutureMatchingToken(using: tailText)
+            if futureMatchAdvance > previousCharCount {
+                recognizedCharCount = futureMatchAdvance
+                trackingDebugMessage = "future-word-skip"
+                trackingDebugSnapshot = TrackingDebugSnapshot(
+                    reason: "future-word-skip",
+                    stableSegmentCount: stableSegments.count,
+                    committedSegmentCount: committedSegmentCount,
+                    averageConfidence: averageConfidence(for: stableSegments),
+                    tailText: tailText
+                )
+                resetStallTracking()
+                resetNoAdvanceTracking()
+            } else if shouldForceAdvanceForNoProgress(spokenText: spokenText, segments: stableSegments) {
+                let nudged = matcher.nudgeForwardOneToken()
+                if nudged > previousCharCount {
+                    recognizedCharCount = nudged
+                    trackingDebugMessage = "stall-skip-word"
+                    trackingDebugSnapshot = TrackingDebugSnapshot(
+                        reason: "stall-skip-word",
+                        stableSegmentCount: stableSegments.count,
+                        committedSegmentCount: committedSegmentCount,
+                        averageConfidence: averageConfidence(for: stableSegments),
+                        tailText: tailText
+                    )
+                    resetStallTracking()
+                    resetNoAdvanceTracking()
+                }
+            }
+        }
+    }
+
+    private func stableSegmentsToCommit(from segments: [RecognizedSegment], isFinal: Bool) -> [RecognizedSegment] {
+        let stablePrefixCount = commonPrefixCount(previousHypothesisSegments, segments)
+        let rawCommitBoundary = isFinal ? segments.count : stablePrefixCount
+        let commitBoundary = min(max(0, rawCommitBoundary), segments.count)
+        let safeStart = min(committedSegmentCount, segments.count)
+        let scanStart = min(safeStart, commitBoundary)
+
+        var confidenceBoundary = commitBoundary
+        if !isFinal {
+            for index in scanStart..<commitBoundary {
+                if !shouldCommit(segment: segments[index]) {
+                    confidenceBoundary = index
+                    break
+                }
+            }
+        }
+
+        let safeEnd = min(max(0, confidenceBoundary), segments.count)
+        let newlyStable = safeEnd > safeStart ? Array(segments[safeStart..<safeEnd]) : []
+        previousHypothesisSegments = segments
+        committedSegmentCount = max(committedSegmentCount, safeEnd)
+        if newlyStable.isEmpty, scanStart < commitBoundary, !isFinal {
+            trackingDebugMessage = "hold-low-confidence-segment"
+            let blockedSegments = Array(segments[scanStart..<commitBoundary])
+            trackingDebugSnapshot = TrackingDebugSnapshot(
+                reason: "hold-low-confidence-segment",
+                stableSegmentCount: 0,
+                committedSegmentCount: committedSegmentCount,
+                averageConfidence: averageConfidence(for: blockedSegments),
+                tailText: blockedSegments.prefix(2).map(\.text).joined(separator: " ")
+            )
+        }
+        if newlyStable.isEmpty, isFinal {
+            trackingDebugSnapshot = TrackingDebugSnapshot(
+                reason: "final-no-new-segments",
+                stableSegmentCount: 0,
+                committedSegmentCount: committedSegmentCount,
+                averageConfidence: nil,
+                tailText: nil
+            )
+        }
+        return newlyStable
+    }
+
+    private func commonPrefixCount(_ lhs: [RecognizedSegment], _ rhs: [RecognizedSegment]) -> Int {
+        let upperBound = min(lhs.count, rhs.count)
+        var index = 0
+        while index < upperBound, lhs[index].fingerprint == rhs[index].fingerprint {
+            index += 1
+        }
+        return index
+    }
+
+    private func shouldCommit(segment: RecognizedSegment) -> Bool {
+        if segment.fingerprint.count <= 2 {
+            return true
+        }
+        guard let confidence = segment.confidence else { return true }
+        return confidence >= TrackingTuning.minimumSegmentConfidence
+    }
+
+    private func averageConfidence(for segments: [RecognizedSegment]) -> Float? {
+        let confidences = segments.compactMap(\.confidence)
+        guard !confidences.isEmpty else { return nil }
+        let total = confidences.reduce(0, +)
+        return total / Float(confidences.count)
+    }
+
+    private func shouldSuppressRecognitionError(_ error: Error) -> Bool {
+        let description = error.localizedDescription.lowercased()
+        return description.contains("no speech")
+            || description.contains("unsuccessful")
+            || description.contains("canceled")
+            || description.contains("cancelled")
+    }
+
+    private func extractSegments(from result: SFSpeechRecognitionResult) -> [RecognizedSegment] {
+        result.bestTranscription.segments.compactMap { segment in
+            let trimmed = segment.substring.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return RecognizedSegment(
+                text: trimmed,
+                timestamp: segment.timestamp,
+                duration: segment.duration,
+                confidence: segment.confidence,
+                fingerprint: Self.normalizedFingerprint(text: trimmed)
+            )
+        }
+    }
+
+    private func shouldForceAdvance(for spokenText: String) -> Bool {
+        let fingerprint = Self.normalizedFingerprint(text: spokenText)
+        guard !fingerprint.isEmpty else {
+            resetStallTracking()
+            return false
+        }
+        if fingerprint == stalledFingerprint {
+            stalledCount += 1
+        } else {
+            stalledFingerprint = fingerprint
+            stalledCount = 1
+        }
+        return stalledCount >= TrackingTuning.stalledRepeatThreshold
+    }
+
+    private func shouldForceAdvanceForNoProgress(spokenText: String, segments: [RecognizedSegment]) -> Bool {
+        let normalizedTokens = spokenText
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        let hasEnoughSignal = normalizedTokens.count >= 2 || segments.count >= 2
+        guard hasEnoughSignal else {
+            resetNoAdvanceTracking()
+            return false
+        }
+        stalledNoAdvanceCount += 1
+        return stalledNoAdvanceCount >= TrackingTuning.stalledNoAdvanceThreshold
+    }
+
+    private func resetStallTracking() {
+        stalledFingerprint = nil
+        stalledCount = 0
+    }
+
+    private func resetNoAdvanceTracking() {
+        stalledNoAdvanceCount = 0
+    }
+
+    private func resetRecognitionStreamState() {
+        previousHypothesisSegments = []
+        committedSegmentCount = 0
+        resetStallTracking()
+        resetNoAdvanceTracking()
     }
 
     private static func normalizedLevel(from buffer: AVAudioPCMBuffer) -> Double {
@@ -218,5 +559,56 @@ final class IOSWordTrackingRecognizer {
             offset += words[wordIndex].count + 1
         }
         return offset
+    }
+
+    private static func sanitizedHints(_ hints: [String], limit: Int) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for rawHint in hints {
+            let hint = rawHint.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !hint.isEmpty else { continue }
+            let key = normalizedFingerprint(text: hint)
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            ordered.append(hint)
+            if ordered.count >= limit {
+                break
+            }
+        }
+        return ordered
+    }
+
+    private static func normalizedFingerprint(text: String) -> String {
+        text
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+}
+
+private extension IOSWordTrackingRecognizer {
+    struct RecognizedSegment: Equatable {
+        let text: String
+        let timestamp: TimeInterval
+        let duration: TimeInterval
+        let confidence: Float?
+        let fingerprint: String
+    }
+
+    struct TrackingDebugSnapshot {
+        let reason: String
+        let stableSegmentCount: Int
+        let committedSegmentCount: Int
+        let averageConfidence: Float?
+        let tailText: String?
+
+        var summary: String {
+            var parts = [reason, "stable \(stableSegmentCount)", "committed \(committedSegmentCount)"]
+            if let averageConfidence {
+                parts.append(String(format: "conf %.2f", averageConfidence))
+            }
+            if let tailText, !tailText.isEmpty {
+                parts.append("“\(tailText)”")
+            }
+            return parts.joined(separator: " · ")
+        }
     }
 }

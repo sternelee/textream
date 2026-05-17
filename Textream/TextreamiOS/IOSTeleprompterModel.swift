@@ -22,7 +22,7 @@ final class IOSTeleprompterModel {
     var scrollSpeedWordsPerSecond: Double = 2.0 {
         didSet { persistReaderSettingsIfNeeded() }
     }
-    var readerFontSize: Double = 34 {
+    var readerFontSize: Double = IOSReaderFontSizing.default {
         didSet { persistReaderSettingsIfNeeded() }
     }
     var readerLineSpacing: Double = 1.2 {
@@ -51,17 +51,8 @@ final class IOSTeleprompterModel {
             persistReaderSettingsIfNeeded()
             UserDefaults.standard.set(speechLocale.localeIdentifier, forKey: "speechLocale")
             guard isReaderPresented, session.mode == .wordTracking else { return }
-            wordTracker.start(
-                with: document.currentPageText,
-                localeIdentifier: speechLocale.localeIdentifier,
-                preservingCharCount: session.recognizedCharCount
-            )
-            session.updateSpeech(
-                charCount: wordTracker.recognizedCharCount,
-                lastSpokenText: wordTracker.lastSpokenText,
-                audioLevels: wordTracker.audioLevels,
-                isListening: wordTracker.isListening
-            )
+            startWordTrackingRecognizer(preservingCharCount: session.recognizedCharCount)
+            syncWordTrackingSessionFromRecognizer()
         }
     }
     var phoneticTooltipEnabled: Bool = true {
@@ -70,7 +61,7 @@ final class IOSTeleprompterModel {
     var nativeLanguage: String = "zh" {
         didSet { persistReaderSettingsIfNeeded() }
     }
-    var phoneticSource: PhoneticSource = .aiGenerated {
+    var phoneticSource: PhoneticSource = .localDictionary {
         didSet { persistReaderSettingsIfNeeded() }
     }
     var pageTitle: String = "Untitled" {
@@ -210,7 +201,7 @@ final class IOSTeleprompterModel {
             if !session.lastSpokenText.isEmpty {
                 return "Heard: \(session.lastSpokenText)"
             }
-            return "Listening for speech in \(speechLocale.label) to move the highlight…"
+            return "Listening for speech in \(resolvedWordTrackingLocaleLabel) to move the highlight…"
         }
     }
 
@@ -219,6 +210,15 @@ final class IOSTeleprompterModel {
         if let error = audioMonitor.errorMessage, !error.isEmpty { return error }
         if let error = documentLibrary.errorMessage, !error.isEmpty { return error }
         return nil
+    }
+
+    var wordTrackingDebugMessage: String? {
+        guard selectedMode == .wordTracking || session.mode == .wordTracking else { return nil }
+        return wordTracker.trackingDebugSummary ?? wordTracker.trackingDebugMessage
+    }
+
+    var wordTrackingLocaleDisplayLabel: String {
+        resolvedWordTrackingLocaleLabel
     }
 
     var currentDocumentDisplayName: String {
@@ -275,6 +275,10 @@ final class IOSTeleprompterModel {
         let maxPageLength = 50000
         let trimmed = text.count > maxPageLength ? String(text.prefix(maxPageLength)) : text
         document.setCurrentPageText(trimmed)
+        if isReaderPresented, session.mode == .wordTracking {
+            wordTracker.updateText(document.currentPageText)
+            syncWordTrackingSessionFromRecognizer()
+        }
         documentStatusMessage = nil
         clearRuntimeErrors()
         persistDraft()
@@ -380,17 +384,8 @@ final class IOSTeleprompterModel {
                     isListening: false
                 )
             } else {
-                wordTracker.start(
-                    with: document.currentPageText,
-                    localeIdentifier: speechLocale.localeIdentifier,
-                    preservingCharCount: session.recognizedCharCount
-                )
-                session.updateSpeech(
-                    charCount: wordTracker.recognizedCharCount,
-                    lastSpokenText: wordTracker.lastSpokenText,
-                    audioLevels: wordTracker.audioLevels,
-                    isListening: wordTracker.isListening
-                )
+                startWordTrackingRecognizer(preservingCharCount: session.recognizedCharCount)
+                syncWordTrackingSessionFromRecognizer()
             }
         }
         persistDraft()
@@ -445,12 +440,10 @@ final class IOSTeleprompterModel {
         switch session.mode {
         case .wordTracking:
             wordTracker.jumpTo(wordIndex: index, in: currentWords)
-            session.updateSpeech(
-                charCount: wordTracker.recognizedCharCount,
-                lastSpokenText: wordTracker.lastSpokenText,
-                audioLevels: wordTracker.audioLevels,
-                isListening: wordTracker.isListening
-            )
+            if session.isListening {
+                startWordTrackingRecognizer(preservingCharCount: wordTracker.recognizedCharCount)
+            }
+            syncWordTrackingSessionFromRecognizer()
         case .classic, .voiceActivated:
             setWordProgress(Double(index))
         }
@@ -619,7 +612,7 @@ final class IOSTeleprompterModel {
     func resetReaderSettings() {
         isRestoringPersistentState = true
         selectedMode = .classic
-        readerFontSize = 34
+        readerFontSize = IOSReaderFontSizing.default
         readerLineSpacing = 1.2
         keepScreenAwakeWhileReading = true
         hapticEnabled = true
@@ -630,7 +623,7 @@ final class IOSTeleprompterModel {
         speechLocale = .system
         phoneticTooltipEnabled = true
         nativeLanguage = "zh"
-        phoneticSource = .aiGenerated
+        phoneticSource = .localDictionary
         isRestoringPersistentState = false
         persistReaderSettings()
         documentStatusMessage = "Reader settings reset to defaults."
@@ -709,6 +702,119 @@ final class IOSTeleprompterModel {
         return trimmed.isEmpty ? "Untitled" : trimmed
     }
 
+    private func currentWordTrackingAnchor() -> Int {
+        min(max(currentWordIndex, 0), max(currentWords.count - 1, 0))
+    }
+
+    private var currentPageLanguageSignal: (latinLetters: Int, cjkScalars: Int) {
+        let text = document.currentPageText
+        var latinLetters = 0
+        var cjkScalars = 0
+        for scalar in text.unicodeScalars {
+            if scalar.properties.isIdeographic || scalar.value >= 0x3040 && scalar.value <= 0x30FF || scalar.value >= 0xAC00 && scalar.value <= 0xD7AF {
+                cjkScalars += 1
+            } else if (65...90).contains(scalar.value) || (97...122).contains(scalar.value) {
+                latinLetters += 1
+            }
+        }
+        return (latinLetters, cjkScalars)
+    }
+
+    private var shouldPreferEnglishWordTrackingLocale: Bool {
+        let signal = currentPageLanguageSignal
+        return signal.latinLetters >= max(6, signal.cjkScalars * 2)
+    }
+
+    private var resolvedWordTrackingLocaleIdentifier: String {
+        if shouldPreferEnglishWordTrackingLocale,
+           speechLocale != .englishUS,
+           speechLocale != .englishUK {
+            return IOSSpeechLocaleOption.englishUS.rawValue
+        }
+
+        if speechLocale != .system {
+            return speechLocale.localeIdentifier
+        }
+
+        return Locale.autoupdatingCurrent.identifier
+    }
+
+    private var resolvedWordTrackingLocaleLabel: String {
+        if shouldPreferEnglishWordTrackingLocale,
+           speechLocale != .englishUS,
+           speechLocale != .englishUK {
+            return "English (auto)"
+        }
+        return speechLocale.label
+    }
+
+    private func startWordTrackingRecognizer(preservingCharCount: Int? = nil) {
+        wordTracker.start(
+            with: document.currentPageText,
+            localeIdentifier: resolvedWordTrackingLocaleIdentifier,
+            preservingCharCount: preservingCharCount,
+            contextualHints: speechHintsForCurrentPage(),
+            anchorWordIndex: currentWordTrackingAnchor()
+        )
+    }
+
+    private func syncWordTrackingSessionFromRecognizer() {
+        session.updateSpeech(
+            charCount: wordTracker.recognizedCharCount,
+            lastSpokenText: wordTracker.lastSpokenText,
+            audioLevels: wordTracker.audioLevels,
+            isListening: wordTracker.isListening
+        )
+    }
+
+    private func speechHintsForCurrentPage() -> [String] {
+        var candidates: [String] = []
+        candidates.append(contentsOf: speechHintTokens(in: document.currentPageText, maxCount: 64))
+        if let nextPageIndex = document.nextReadablePageIndex(skippingEmptyPages: false), document.pages.indices.contains(nextPageIndex) {
+            candidates.append(contentsOf: speechHintTokens(in: document.pages[nextPageIndex], maxCount: 24))
+        }
+        candidates.append(contentsOf: speechHintTokens(in: normalizedTitle, maxCount: 8))
+        candidates.append(contentsOf: document.tags)
+        return orderedUniqueSpeechHints(candidates, limit: 80)
+    }
+
+    private func speechHintTokens(in text: String, maxCount: Int) -> [String] {
+        let rawFragments = text
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "_" })
+            .map(String.init)
+        let candidates = TextSegmentation.splitIntoWords(text) + rawFragments
+        var results: [String] = []
+        for candidate in candidates {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let normalized = trimmed.filter { $0.isLetter || $0.isNumber }
+            guard normalized.count >= 2 || trimmed.contains(where: { $0.isNumber }) else { continue }
+            results.append(trimmed)
+            if results.count >= maxCount {
+                break
+            }
+        }
+        return results
+    }
+
+    private func orderedUniqueSpeechHints(_ candidates: [String], limit: Int) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for candidate in candidates {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed
+                .lowercased()
+                .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            ordered.append(trimmed)
+            if ordered.count >= limit {
+                break
+            }
+        }
+        return ordered
+    }
+
     private func syncAudioMonitoringForCurrentMode() {
         switch session.mode {
         case .classic:
@@ -721,17 +827,8 @@ final class IOSTeleprompterModel {
             session.updateAudio(audioLevels: audioMonitor.audioLevels, isListening: audioMonitor.isRunning)
         case .wordTracking:
             audioMonitor.stop()
-            wordTracker.start(
-                with: document.currentPageText,
-                localeIdentifier: speechLocale.localeIdentifier,
-                preservingCharCount: session.recognizedCharCount
-            )
-            session.updateSpeech(
-                charCount: wordTracker.recognizedCharCount,
-                lastSpokenText: wordTracker.lastSpokenText,
-                audioLevels: wordTracker.audioLevels,
-                isListening: wordTracker.isListening
-            )
+            startWordTrackingRecognizer(preservingCharCount: session.recognizedCharCount)
+            syncWordTrackingSessionFromRecognizer()
         }
     }
 
@@ -796,7 +893,7 @@ final class IOSTeleprompterModel {
         isRestoringPersistentState = true
         let settings = decode(IOSPersistedReaderSettings.self, forKey: readerSettingsKey) ?? IOSPersistedReaderSettings()
         selectedMode = settings.selectedMode
-        readerFontSize = settings.fontSize
+        readerFontSize = clampedReaderFontSize(settings.fontSize)
         readerLineSpacing = settings.lineSpacing
         keepScreenAwakeWhileReading = settings.keepScreenAwake
         hapticEnabled = settings.hapticEnabled
@@ -870,6 +967,11 @@ final class IOSTeleprompterModel {
         encode(normalizedCurrentSnapshot, forKey: draftStateKey)
         lastAutoSavedAt = Date()
     }
+
+    private func clampedReaderFontSize(_ value: Double) -> Double {
+        min(IOSReaderFontSizing.maximum, max(IOSReaderFontSizing.minimum, value))
+    }
+
 
     func setBookmark() {
         document.bookmarkPageIndex = document.currentPageIndex
@@ -983,17 +1085,8 @@ final class IOSTeleprompterModel {
             audioMonitor.start()
             session.updateAudio(audioLevels: audioMonitor.audioLevels, isListening: audioMonitor.isRunning)
         case .wordTracking:
-            wordTracker.start(
-                with: document.currentPageText,
-                localeIdentifier: speechLocale.localeIdentifier,
-                preservingCharCount: session.recognizedCharCount
-            )
-            session.updateSpeech(
-                charCount: wordTracker.recognizedCharCount,
-                lastSpokenText: wordTracker.lastSpokenText,
-                audioLevels: wordTracker.audioLevels,
-                isListening: wordTracker.isListening
-            )
+            startWordTrackingRecognizer(preservingCharCount: session.recognizedCharCount)
+            syncWordTrackingSessionFromRecognizer()
         }
     }
 

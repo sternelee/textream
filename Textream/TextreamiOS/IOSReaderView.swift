@@ -22,8 +22,8 @@ struct IOSReaderView: View {
     @State private var showingJumpToPage = false
     @State private var jumpToPageText = ""
     @State private var showingPractice = false
-    @State private var showPhoneticTooltip = false
-    @State private var selectedWordForLookup: String? = nil
+    @State private var lookupSelection: LookupSelection? = nil
+    @State private var wordActionSelection: LookupSelection? = nil
     private let tickTimer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -88,9 +88,27 @@ struct IOSReaderView: View {
         .sheet(isPresented: $showingPractice) {
             PracticeView(scriptText: model.document.pages.joined(separator: "\n\n"))
         }
-        .sheet(isPresented: $showPhoneticTooltip) {
-            if let word = selectedWordForLookup {
-                PhoneticTooltipView(word: word, nativeLanguage: model.nativeLanguage, phoneticSource: model.phoneticSource)
+        .sheet(item: $lookupSelection) { selection in
+            PhoneticTooltipView(word: selection.word, nativeLanguage: model.nativeLanguage, phoneticSource: model.phoneticSource)
+        }
+        .confirmationDialog(wordActionSelection?.word ?? "Word Actions", isPresented: Binding(
+            get: { wordActionSelection != nil },
+            set: { if !$0 { wordActionSelection = nil } }
+        ), titleVisibility: .visible) {
+            if let selection = wordActionSelection {
+                Button("Speak") {
+                    model.speakWord(selection.word)
+                    wordActionSelection = nil
+                }
+                if model.phoneticTooltipEnabled {
+                    Button("Lookup") {
+                        lookupSelection = LookupSelection(word: selection.word)
+                        wordActionSelection = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    wordActionSelection = nil
+                }
             }
         }
     }
@@ -357,11 +375,122 @@ struct IOSReaderView: View {
     }
 
     private func progressSummary(compact: Bool) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: compact ? 120 : 140), spacing: 10)], spacing: 10) {
+        let summaryGrid = LazyVGrid(columns: [GridItem(.adaptive(minimum: compact ? 120 : 140), spacing: 10)], spacing: 10) {
             summaryCapsule(title: "Progress", value: "\(Int(model.progressRatio * 100))%")
             summaryCapsule(title: "Word", value: "\(min(model.currentWordIndex + 1, max(model.currentWords.count, 1))) / \(max(model.currentWords.count, 1))")
             summaryCapsule(title: "Time", value: model.elapsedReadingTimeFormatted)
             summaryCapsule(title: "Page", value: "\(model.document.currentPageIndex + 1) / \(model.document.pages.count)")
+        }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("PROGRESS")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.5))
+
+                if model.session.mode == .wordTracking {
+                    Text(model.session.lastSpokenText.isEmpty ? "Listening…" : model.session.lastSpokenText)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(model.session.lastSpokenText.isEmpty ? .white.opacity(0.45) : .white.opacity(0.72))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Spacer()
+                }
+
+                inlineWaveformView(compact: compact)
+            }
+            summaryGrid
+        }
+    }
+
+    @ViewBuilder
+    private func inlineWaveformView(compact: Bool) -> some View {
+        let frameWidth: CGFloat = compact ? 80 : 160
+        let frameHeight: CGFloat = 28
+
+        waveformBars(width: frameWidth, height: frameHeight)
+            .opacity(model.session.mode == .classic ? 0.45 : 1)
+    }
+
+    private func waveformBars(width: CGFloat, height: CGFloat) -> some View {
+        let levels = Array(model.session.audioLevels.suffix(width <= 80 ? 14 : 30))
+
+        return HStack(alignment: .center, spacing: 2) {
+            ForEach(Array(levels.enumerated()), id: \.offset) { index, level in
+                let barProgress = Double(index) / Double(max(1, levels.count - 1))
+                let isLit = barProgress <= model.progressRatio
+
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(isLit
+                          ? Color.yellow.opacity(0.9)
+                          : Color.yellow.opacity(0.25)
+                    )
+                    .frame(width: 3, height: max(3, level * 28))
+                    .animation(.easeOut(duration: 0.08), value: level)
+            }
+        }
+        .frame(width: width, height: height, alignment: .trailing)
+        .clipped()
+    }
+
+    private var waveformView: some View {
+        waveformBars(width: 120, height: 36)
+    }
+
+    private var statusTextBlock: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(model.session.mode == .classic ? "Classic playback" : (model.session.isListening ? "Microphone live" : "Microphone paused"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("Page \(model.document.currentPageIndex + 1) of \(model.document.pages.count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.52))
+            }
+            if let message = model.readerStatusMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.74))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(statusDetailLine)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.52))
+            if model.session.mode == .wordTracking {
+                Text("tracker \(model.wordTrackingDebugMessage ?? "waiting-for-segments")")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.42))
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func statusCard(compact: Bool) -> some View {
+        ZStack {
+            VStack(alignment: .leading, spacing: 14) {
+                statusTextBlock
+            }
+            .padding(16)
+            .background(Color.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+
+            if model.session.isPaused {
+                HStack(spacing: 6) {
+                    Image(systemName: "pause.circle.fill")
+                        .font(.title3.weight(.semibold))
+                    Text("PAUSED")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.55))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+            }
         }
     }
 
@@ -380,10 +509,8 @@ struct IOSReaderView: View {
                 mirrorEnabled: model.mirrorModeEnabled,
                 phoneticEnabled: model.phoneticTooltipEnabled,
                 onTapWord: { model.jumpToWord(index: $0) },
-                onSpeakWord: { model.speakWord($0) },
-                onLookupWord: { word in
-                    selectedWordForLookup = word
-                    showPhoneticTooltip = true
+                onRequestWordActions: { word in
+                    wordActionSelection = LookupSelection(word: word)
                 }
             )
 
@@ -518,7 +645,7 @@ struct IOSReaderView: View {
                     let delta = value / lastMagnification
                     lastMagnification = value
                     let newSize = model.readerFontSize * Double(delta)
-                    model.readerFontSize = max(24, min(64, newSize))
+                    model.readerFontSize = newSize
                 }
                 .onEnded { _ in
                     lastMagnification = 1.0
@@ -632,65 +759,6 @@ struct IOSReaderView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
-    private func statusCard(compact: Bool) -> some View {
-        ZStack {
-            VStack(alignment: .leading, spacing: 14) {
-                if compact {
-                    VStack(alignment: .leading, spacing: 12) {
-                        waveformView
-                        statusTextBlock
-                    }
-                } else {
-                    HStack(spacing: 12) {
-                        waveformView
-                        statusTextBlock
-                    }
-                }
-            }
-            .padding(16)
-            .background(Color.white.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-
-            if model.session.isPaused {
-                HStack(spacing: 6) {
-                    Image(systemName: "pause.circle.fill")
-                        .font(.title3.weight(.semibold))
-                    Text("PAUSED")
-                        .font(.caption.weight(.bold))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.55))
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            }
-        }
-    }
-
-    private var statusTextBlock: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(model.session.mode == .classic ? "Classic playback" : (model.session.isListening ? "Microphone live" : "Microphone paused"))
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text("Page \(model.document.currentPageIndex + 1) of \(model.document.pages.count)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.52))
-            }
-            if let message = model.readerStatusMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.74))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text(statusDetailLine)
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.52))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     private func nextPagePreview(compact: Bool) -> some View {
         Group {
             if let nextIndex = model.document.nextReadablePageIndex() {
@@ -782,19 +850,8 @@ struct IOSReaderView: View {
             let level = String(format: "%.3f", model.audioMonitor.averageLevel)
             return "word \(min(model.currentWordIndex + 1, max(model.currentWords.count, 1))) / \(max(model.currentWords.count, 1)) · audio \(level) · remaining \(model.estimatedTimeRemaining)"
         case .wordTracking:
-            return "chars \(model.session.recognizedCharCount) / \(max(model.currentCollapsedText.count, 1)) · locale \(model.speechLocale.label) · remaining \(model.estimatedTimeRemaining)"
+            return "chars \(model.session.recognizedCharCount) / \(max(model.currentCollapsedText.count, 1)) · locale \(model.wordTrackingLocaleDisplayLabel) · remaining \(model.estimatedTimeRemaining)"
         }
-    }
-
-    private var waveformView: some View {
-        HStack(alignment: .center, spacing: 3) {
-            ForEach(Array(model.session.audioLevels.enumerated()), id: \.offset) { index, level in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(waveformColor.opacity(index.isMultiple(of: 2) ? 0.95 : 0.72))
-                    .frame(width: 4, height: max(6, level * 34))
-            }
-        }
-        .frame(width: 120, height: 38, alignment: .leading)
     }
 
     private func showPageTransitionToast(_ text: String) {
@@ -913,7 +970,7 @@ struct IOSReaderView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Size: \(Int(model.readerFontSize)) pt")
                                 .font(.caption.weight(.semibold))
-                            Slider(value: $model.readerFontSize, in: 24...64, step: 1)
+                            Slider(value: $model.readerFontSize, in: IOSReaderFontSizing.minimum...IOSReaderFontSizing.maximum, step: 1)
                                 .tint(model.highlightColorPreset.tint)
                         }
                         VStack(alignment: .leading, spacing: 4) {
@@ -1125,8 +1182,7 @@ private struct LazyWordsView: View {
     let mirrorEnabled: Bool
     let phoneticEnabled: Bool
     let onTapWord: (Int) -> Void
-    let onSpeakWord: (String) -> Void
-    let onLookupWord: (String) -> Void
+    let onRequestWordActions: (String) -> Void
 
     @State private var rows: [[Int]] = []
     @State private var wordToRow: [Int: Int] = [:]
@@ -1151,8 +1207,7 @@ private struct LazyWordsView: View {
                                     softBackground: softBackground,
                                     compact: compact,
                                     onTap: { onTapWord(wordIdx) },
-                                    onSpeak: { onSpeakWord(words[wordIdx]) },
-                                    onLookup: { onLookupWord(words[wordIdx]) },
+                                    onLongPress: { onRequestWordActions(words[wordIdx]) },
                                     phoneticEnabled: phoneticEnabled
                                 )
                                 .id(wordIdx)
@@ -1254,42 +1309,42 @@ private struct WordButtonView: View {
     let softBackground: Color
     let compact: Bool
     let onTap: () -> Void
-    let onSpeak: () -> Void
-    let onLookup: () -> Void
+    let onLongPress: () -> Void
     let phoneticEnabled: Bool
 
     @State private var isPressed = false
 
     var body: some View {
-        Button(action: {
-            isPressed = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                isPressed = false
-            }
-            onTap()
-        }) {
-            Text(word)
-                .font(.system(size: fontSize, weight: isCurrent ? .bold : .semibold, design: fontDesign))
-                .lineLimit(1)
-                .padding(.horizontal, compact ? 8 : 10)
-                .padding(.vertical, compact ? 7 : 8)
-                .background(backgroundColor)
-                .foregroundStyle(foregroundColor)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .scaleEffect(isPressed ? 1.15 : 1.0)
-                .animation(.easeOut(duration: 0.15), value: isPressed)
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button(action: onSpeak) {
-                Label("Speak", systemImage: "speaker.wave.2")
-            }
-            if phoneticEnabled {
-                Button(action: onLookup) {
-                    Label("Lookup", systemImage: "text.magnifyingglass")
+        Text(word)
+            .font(.system(size: fontSize, weight: isCurrent ? .bold : .semibold, design: fontDesign))
+            .lineLimit(1)
+            .padding(.horizontal, compact ? 8 : 10)
+            .padding(.vertical, compact ? 7 : 8)
+            .background(backgroundColor)
+            .foregroundStyle(foregroundColor)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .scaleEffect(isPressed ? 1.15 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .gesture(
+                ExclusiveGesture(
+                    LongPressGesture(minimumDuration: 0.35),
+                    TapGesture()
+                )
+                .onEnded { value in
+                    switch value {
+                    case .first:
+                        guard phoneticEnabled else { return }
+                        onLongPress()
+                    case .second:
+                        isPressed = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            isPressed = false
+                        }
+                        onTap()
+                    }
                 }
-            }
-        }
+            )
     }
 
     private var backgroundColor: Color {
@@ -1303,6 +1358,11 @@ private struct WordButtonView: View {
         if isCurrent { return highlightTint }
         return .white
     }
+}
+
+private struct LookupSelection: Identifiable {
+    let id = UUID()
+    let word: String
 }
 
 private struct PressEffect: ViewModifier {
