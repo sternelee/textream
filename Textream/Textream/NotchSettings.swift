@@ -291,21 +291,21 @@ enum PhoneticSource: String, CaseIterable, Identifiable {
     
     var label: String {
         switch self {
-        case .appleNative:  return "Apple Native"
+        case .appleNative:  return "Dictionary"
         case .aiGenerated:  return "AI Generated"
         }
     }
     
     var description: String {
         switch self {
-        case .appleNative:  return "Use macOS Translation framework for phonetic hints."
-        case .aiGenerated:  return "Use OpenAI to generate phonetic spellings."
+        case .appleNative:  return "Use built-in IPA plus free online dictionary coverage."
+        case .aiGenerated:  return "Use OpenAI when configured, then fall back to dictionary lookup."
         }
     }
     
     var icon: String {
         switch self {
-        case .appleNative:  return "apple.logo"
+        case .appleNative:  return "book.fill"
         case .aiGenerated:  return "sparkles"
         }
     }
@@ -605,7 +605,7 @@ class NotchSettings {
         self.nativeLanguage = UserDefaults.standard.string(forKey: "nativeLanguage") ?? Locale.current.language.languageCode?.identifier ?? "en"
         let savedPauseThreshold = UserDefaults.standard.double(forKey: "pauseThreshold")
         self.pauseThreshold = savedPauseThreshold > 0 ? savedPauseThreshold : 1.5
-        self.phoneticSource = PhoneticSource(rawValue: UserDefaults.standard.string(forKey: "phoneticSource") ?? "") ?? .aiGenerated
+        self.phoneticSource = PhoneticSource(rawValue: UserDefaults.standard.string(forKey: "phoneticSource") ?? "") ?? .appleNative
         self.phoneticTooltipEnabled = UserDefaults.standard.object(forKey: "phoneticTooltipEnabled") as? Bool ?? false
     }
 }

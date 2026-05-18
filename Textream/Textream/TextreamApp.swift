@@ -28,6 +28,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Eager-init mouse event tracker so Option+Click modifiers are captured
+        // from the very first click (the monitor must be installed before any
+        // event dispatch).
+        _ = MouseEventTracker.shared
+
         NSApp.servicesProvider = TextreamService.shared
         NSUpdateDynamicServices()
 

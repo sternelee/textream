@@ -99,10 +99,10 @@ struct PhoneticTooltipView: View {
                     }
                 }
 
-                // Translation
+                // Meaning / translation
                 if !result.translation.isEmpty {
-                    HStack(spacing: 4) {
-                        Text(NotchSettings.shared.nativeLanguage.uppercased())
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Meaning / Translation")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.secondary)
                         Text(result.translation)
@@ -111,15 +111,20 @@ struct PhoneticTooltipView: View {
                     }
                 }
 
-                // Pronunciation guide
+                // Guide / example
                 if !result.pronunciation.isEmpty {
-                    HStack(alignment: .top, spacing: 4) {
-                        Text("💡")
-                            .font(.system(size: 11))
-                        Text(result.pronunciation)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.primary.opacity(0.8))
-                            .lineLimit(3)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Guide / Example")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        HStack(alignment: .top, spacing: 4) {
+                            Text("💡")
+                                .font(.system(size: 11))
+                            Text(result.pronunciation)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.primary.opacity(0.8))
+                                .lineLimit(3)
+                        }
                     }
                 }
             } else if loadingTimedOut {
@@ -128,7 +133,7 @@ struct PhoneticTooltipView: View {
                     Image(systemName: "exclamationmark.circle")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                    Text("No result")
+                    Text("No built-in or online dictionary result")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }

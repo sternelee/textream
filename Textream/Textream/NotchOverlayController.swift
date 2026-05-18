@@ -9,6 +9,39 @@ import AppKit
 import SwiftUI
 import Combine
 
+/// Tracks the modifier flags of the most recent left-mouse-down event
+/// so that SwiftUI tap-gesture handlers can reliably detect Option+Click.
+///
+/// Uses a global event monitor (instead of a local one) because the app runs in
+/// `.accessory` activation policy and the overlay panels use `.nonactivatingPanel`
+/// style at `.screenSaver` level — in that configuration local monitors do not
+/// reliably fire for clicks on the panels.  Global monitors for mouse events do
+/// not require the Accessibility permission.
+@Observable
+final class MouseEventTracker {
+    static let shared = MouseEventTracker()
+    private(set) var lastLeftMouseDownModifiers: NSEvent.ModifierFlags = []
+
+    private init() {
+        // Global monitor: receives leftMouseDown events regardless of whether this
+        // app is frontmost.  handleWordTap is only invoked for clicks inside our own
+        // panels, so any state set here by clicks in other apps is harmless — it will
+        // be overwritten by the correct state the moment the user clicks our panel.
+        // Note: addGlobalMonitorForEvents callbacks run on an arbitrary thread, so
+        // dispatch to the main queue before mutating the @Observable property.
+        _ = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            let flags = event.modifierFlags
+            DispatchQueue.main.async { self?.lastLeftMouseDownModifiers = flags }
+        }
+        // Local monitor as an additional safety net (fires when the app is active).
+        // Local monitor callbacks are already delivered on the main thread.
+        _ = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            self?.lastLeftMouseDownModifiers = event.modifierFlags
+            return event
+        }
+    }
+}
+
 @Observable
 class NotchFrameTracker {
     var visibleHeight: CGFloat = 37 {
@@ -900,6 +933,36 @@ struct NotchOverlayView: View {
         frameTracker.visibleWidth = fullWidth
     }
 
+    private func handleWordTap(_ charOffset: Int) {
+        let clickModifiers = MouseEventTracker.shared.lastLeftMouseDownModifiers
+        if clickModifiers.contains(.option), NotchSettings.shared.phoneticTooltipEnabled {
+            let word = speechRecognizer.findWordAt(charOffset: charOffset)
+            if !word.isEmpty {
+                phoneticResult = PhoneticResult(
+                    word: word,
+                    phonetic: "",
+                    phoneticUK: "",
+                    translation: "",
+                    pronunciation: ""
+                )
+                showPhoneticTooltip = true
+                speechRecognizer.pauseRecognition()
+                PhoneticTooltipService.shared.onResult = { result in
+                    guard let result = result else { return }
+                    phoneticResult = result
+                }
+                PhoneticTooltipService.shared.fetchHint(for: word)
+                return
+            }
+        }
+
+        if listeningMode == .wordTracking {
+            speechRecognizer.jumpTo(charOffset: charOffset)
+        } else {
+            timerWordProgress = wordProgressForCharOffset(charOffset)
+        }
+    }
+
     private var isEffectivelyListening: Bool {
         switch listeningMode {
         case .wordTracking, .silencePaused:
@@ -919,39 +982,7 @@ struct NotchOverlayView: View {
                 cueColor: NotchSettings.shared.cueColorPreset.color,
                 cueUnreadOpacity: NotchSettings.shared.cueBrightness.unreadOpacity,
                 cueReadOpacity: NotchSettings.shared.cueBrightness.readOpacity,
-                onWordTap: { charOffset in
-                    // Option+Click triggers phonetic tooltip for the clicked word
-                    if NSEvent.modifierFlags.contains(.option) {
-                        if NotchSettings.shared.phoneticTooltipEnabled {
-                            let word = speechRecognizer.findWordAt(charOffset: charOffset)
-                            if !word.isEmpty {
-                                // Show loading state immediately + pause recognition
-                                phoneticResult = PhoneticResult(
-                                    word: word,
-                                    phonetic: "",
-                                    phoneticUK: "",
-                                    translation: "",
-                                    pronunciation: ""
-                                )
-                                showPhoneticTooltip = true
-                                speechRecognizer.pauseRecognition()
-                                // Fetch full data
-                                PhoneticTooltipService.shared.onResult = { result in
-                                    guard let result = result else { return }
-                                    phoneticResult = result
-                                }
-                                PhoneticTooltipService.shared.fetchHint(for: word)
-                            }
-                        }
-                        return
-                    }
-                    // Normal click jumps to word
-                    if listeningMode == .wordTracking {
-                        speechRecognizer.jumpTo(charOffset: charOffset)
-                    } else {
-                        timerWordProgress = wordProgressForCharOffset(charOffset)
-                    }
-                },
+                onWordTap: handleWordTap,
                 onManualScroll: { scrolling, newProgress in
                     isUserScrolling = scrolling
                     if !scrolling {
@@ -1298,6 +1329,8 @@ struct FloatingOverlayView: View {
     private var hasNextPage: Bool { content.hasNextPage }
 
     @State private var appeared = false
+    @State private var showPhoneticTooltip = false
+    @State private var phoneticResult: PhoneticResult?
 
     // Auto-advance countdown for follow-cursor mode (where buttons can't be clicked)
     @State private var countdownRemaining: Int = 0
@@ -1352,6 +1385,36 @@ struct FloatingOverlayView: View {
 
     var isDone: Bool {
         totalCharCount > 0 && effectiveCharCount >= totalCharCount
+    }
+
+    private func handleWordTap(_ charOffset: Int) {
+        let clickModifiers = MouseEventTracker.shared.lastLeftMouseDownModifiers
+        if clickModifiers.contains(.option), NotchSettings.shared.phoneticTooltipEnabled {
+            let word = speechRecognizer.findWordAt(charOffset: charOffset)
+            if !word.isEmpty {
+                phoneticResult = PhoneticResult(
+                    word: word,
+                    phonetic: "",
+                    phoneticUK: "",
+                    translation: "",
+                    pronunciation: ""
+                )
+                showPhoneticTooltip = true
+                speechRecognizer.pauseRecognition()
+                PhoneticTooltipService.shared.onResult = { result in
+                    guard let result = result else { return }
+                    phoneticResult = result
+                }
+                PhoneticTooltipService.shared.fetchHint(for: word)
+                return
+            }
+        }
+
+        if listeningMode == .wordTracking {
+            speechRecognizer.jumpTo(charOffset: charOffset)
+        } else {
+            timerWordProgress = wordProgressForCharOffset(charOffset)
+        }
     }
 
     private var isEffectivelyListening: Bool {
@@ -1449,6 +1512,22 @@ struct FloatingOverlayView: View {
         .onChange(of: content.totalCharCount) { _, _ in
             timerWordProgress = 0
         }
+        .onChange(of: showPhoneticTooltip) { _, visible in
+            if !visible {
+                speechRecognizer.unpauseRecognition()
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showPhoneticTooltip, let result = phoneticResult {
+                PhoneticTooltipView(result: result) {
+                    showPhoneticTooltip = false
+                    phoneticResult = nil
+                    speechRecognizer.unpauseRecognition()
+                }
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
     }
 
     private var floatingPrompterView: some View {
@@ -1461,13 +1540,7 @@ struct FloatingOverlayView: View {
                 cueColor: NotchSettings.shared.cueColorPreset.color,
                 cueUnreadOpacity: NotchSettings.shared.cueBrightness.unreadOpacity,
                 cueReadOpacity: NotchSettings.shared.cueBrightness.readOpacity,
-                onWordTap: { charOffset in
-                    if listeningMode == .wordTracking {
-                        speechRecognizer.jumpTo(charOffset: charOffset)
-                    } else {
-                        timerWordProgress = wordProgressForCharOffset(charOffset)
-                    }
-                },
+                onWordTap: handleWordTap,
                 onManualScroll: { scrolling, newProgress in
                     isUserScrolling = scrolling
                     if !scrolling {

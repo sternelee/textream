@@ -115,7 +115,7 @@ struct SpeechScrollView: View {
                 containerWidth: geo.size.width,
                 onWordTap: { charOffset in
                     manualOffset = 0
-                    onWordTap?(charOffset)
+                    { NSLog("[Textream] wordTap charOffset=\(charOffset)"); onWordTap?(charOffset) }()
                     // Force recenter on tapped word
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                         recalcCenter(containerHeight: containerHeight)
@@ -473,7 +473,7 @@ struct WordFlowLayout: View {
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    onWordTap?(item.charOffset)
+                    { NSLog("[Textream] wordTap charOffset=\(item.charOffset)"); onWordTap?(item.charOffset) }()
                 }
         }
 
@@ -495,7 +495,7 @@ struct WordFlowLayout: View {
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    onWordTap?(item.charOffset)
+                    { NSLog("[Textream] wordTap charOffset=\(item.charOffset)"); onWordTap?(item.charOffset) }()
                 }
         }
 
@@ -528,7 +528,7 @@ struct WordFlowLayout: View {
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    onWordTap?(item.charOffset)
+                    { NSLog("[Textream] wordTap charOffset=\(item.charOffset)"); onWordTap?(item.charOffset) }()
                 }
         }
 
@@ -554,7 +554,7 @@ struct WordFlowLayout: View {
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    onWordTap?(item.charOffset)
+                    { NSLog("[Textream] wordTap charOffset=\(item.charOffset)"); onWordTap?(item.charOffset) }()
                 }
         }
 
@@ -593,7 +593,7 @@ struct WordFlowLayout: View {
             )
             .contentShape(Rectangle())
             .onTapGesture {
-                onWordTap?(item.charOffset)
+                { NSLog("[Textream] wordTap charOffset=\(item.charOffset)"); onWordTap?(item.charOffset) }()
             }
     }
 
