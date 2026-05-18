@@ -10,9 +10,9 @@ enum TeleprompterMode: String, CaseIterable, Codable, Identifiable {
 
     var label: String {
         switch self {
-        case .wordTracking: return "Word Tracking"
-        case .classic: return "Classic"
-        case .voiceActivated: return "Voice-Activated"
+        case .wordTracking: return String(localized: "Word Tracking")
+        case .classic: return String(localized: "Classic")
+        case .voiceActivated: return String(localized: "Voice-Activated")
         }
     }
 }

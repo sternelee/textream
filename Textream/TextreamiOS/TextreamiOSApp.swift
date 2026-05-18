@@ -7,11 +7,33 @@ struct TextreamiOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            IOSHomeView(model: model)
+            IOSRootTabView(model: model)
                 .preferredColorScheme(model.forceDarkMode ? .dark : nil)
                 .onChange(of: scenePhase) { _, newValue in
                     model.handleScenePhaseChange(newValue)
                 }
         }
+    }
+}
+
+struct IOSRootTabView: View {
+    @Bindable var model: IOSTeleprompterModel
+    @State private var selectedTab: Int = 0
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            IOSHomeView(model: model, switchToLibraryTab: { selectedTab = 1 })
+                .tabItem { Label("Home", systemImage: "play.circle.fill") }
+                .tag(0)
+
+            IOSLibraryTabView(model: model, onDocumentLoaded: { selectedTab = 0 })
+                .tabItem { Label("Library", systemImage: "doc.text.fill") }
+                .tag(1)
+
+            IOSSettingsView(model: model)
+                .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
+                .tag(2)
+        }
+        .tint(Color.accentColor)
     }
 }

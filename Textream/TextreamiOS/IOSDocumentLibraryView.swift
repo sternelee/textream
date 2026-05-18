@@ -3,6 +3,20 @@ import SwiftUI
 struct IOSDocumentLibraryView: View {
     @Bindable var model: IOSTeleprompterModel
     @Environment(\.dismiss) private var dismiss
+    /// When provided, called after a document is loaded instead of calling dismiss().
+    /// Pass nil when the view is used as a sheet (default dismiss behavior).
+    var onDocumentLoaded: (() -> Void)? = nil
+
+    private var isTabMode: Bool { onDocumentLoaded != nil }
+
+    private func loadAndDismiss(_ item: SavedScriptDocument) {
+        model.loadDocument(item)
+        if let callback = onDocumentLoaded {
+            callback()
+        } else {
+            dismiss()
+        }
+    }
     @State private var documentPendingDeletion: SavedScriptDocument?
     @State private var searchText = ""
     @State private var sortOrder: SortOrder = .modifiedDescending
@@ -63,7 +77,7 @@ struct IOSDocumentLibraryView: View {
                     } actions: {
                         Button {
                             model.newDocument()
-                            dismiss()
+                            if let cb = onDocumentLoaded { cb() } else { dismiss() }
                         } label: {
                             Label("Create New Script", systemImage: "plus.circle")
                         }
@@ -73,18 +87,20 @@ struct IOSDocumentLibraryView: View {
                             if let firstSample = model.sampleScripts.first {
                                 model.loadSampleScript(firstSample)
                             }
-                            dismiss()
+                            if let cb = onDocumentLoaded { cb() } else { dismiss() }
                         } label: {
                             Label("Load Test Script", systemImage: "doc.text.magnifyingglass")
                         }
                         .buttonStyle(.bordered)
 
-                        Button {
-                            dismiss()
-                        } label: {
-                            Label("Back to Editor", systemImage: "arrow.left")
+                        if !isTabMode {
+                            Button {
+                                dismiss()
+                            } label: {
+                                Label("Back to Editor", systemImage: "arrow.left")
+                            }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.bordered)
                     }
                 } else if filteredDocuments.isEmpty {
                     ContentUnavailableView {
@@ -119,8 +135,7 @@ struct IOSDocumentLibraryView: View {
                                         selectedDocuments.insert(item.url)
                                     }
                                 } else {
-                                    model.loadDocument(item)
-                                    dismiss()
+                                    loadAndDismiss(item)
                                 }
                             } label: {
                                 HStack(alignment: .top, spacing: 12) {
@@ -196,8 +211,7 @@ struct IOSDocumentLibraryView: View {
                             .contextMenu {
                                 if !isEditing {
                                     Button {
-                                        model.loadDocument(item)
-                                        dismiss()
+                                        loadAndDismiss(item)
                                     } label: {
                                         Label("Open", systemImage: "doc.text")
                                     }
@@ -246,7 +260,7 @@ struct IOSDocumentLibraryView: View {
                             isEditing = false
                             selectedDocuments.removeAll()
                         }
-                    } else {
+                    } else if !isTabMode {
                         Button("Close") { dismiss() }
                     }
                 }

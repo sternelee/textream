@@ -119,7 +119,7 @@ struct IOSSettingsView: View {
                                 }
                             }
                             .frame(height: 12)
-                            Text(micTestLevel > 0.07 ? "Speaking detected" : (micTestLevel > 0.015 ? "Ambient noise" : "Quiet"))
+                            Text(micTestLevel > 0.07 ? LocalizedStringKey("Speaking detected") : (micTestLevel > 0.015 ? LocalizedStringKey("Ambient noise") : LocalizedStringKey("Quiet")))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -357,19 +357,19 @@ struct IOSSettingsView: View {
             let data = try JSONEncoder().encode(settings)
             let json = String(data: data, encoding: .utf8) ?? "{}"
             UIPasteboard.general.string = json
-            settingsImportMessage = "Settings copied to clipboard."
+            settingsImportMessage = String(localized: "Settings copied to clipboard.")
         } catch {
-            settingsImportMessage = "Failed to export settings."
+            settingsImportMessage = String(localized: "Failed to export settings.")
         }
     }
 
     private func importSettingsFromClipboard() {
         guard let json = UIPasteboard.general.string, !json.isEmpty else {
-            settingsImportMessage = "Clipboard is empty."
+            settingsImportMessage = String(localized: "Clipboard is empty.")
             return
         }
         guard let data = json.data(using: .utf8) else {
-            settingsImportMessage = "Invalid clipboard content."
+            settingsImportMessage = String(localized: "Invalid clipboard content.")
             return
         }
         do {
@@ -388,7 +388,7 @@ struct IOSSettingsView: View {
             model.phoneticTooltipEnabled = settings.phoneticTooltipEnabled
             model.nativeLanguage = settings.nativeLanguage
             model.phoneticSource = settings.phoneticSource
-            settingsImportMessage = "Imported settings successfully."
+            settingsImportMessage = String(localized: "Imported settings successfully.")
         } catch {
             settingsImportMessage = "Invalid settings JSON: \(error.localizedDescription)"
         }
@@ -402,7 +402,7 @@ struct IOSSettingsView: View {
             switch result {
             case .success(let models):
                 fetchedModels = models
-                aiConfigMessage = "Fetched \(models.count) models."
+                aiConfigMessage = String(format: String(localized: "Fetched %lld models."), models.count)
             case .failure(let error):
                 aiConfigMessage = error.localizedDescription
             }

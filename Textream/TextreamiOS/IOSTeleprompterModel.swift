@@ -155,11 +155,11 @@ final class IOSTeleprompterModel {
     var modeSupportDescription: String {
         switch selectedMode {
         case .classic:
-            return "Classic mode auto-scrolls at a fixed pace so you can rehearse without using the microphone."
+            return String(localized: "Classic mode auto-scrolls at a fixed pace so you can rehearse without using the microphone.")
         case .voiceActivated:
-            return "Voice-Activated mode advances only while the microphone hears speech, which helps you pause naturally."
+            return String(localized: "Voice-Activated mode advances only while the microphone hears speech, which helps you pause naturally.")
         case .wordTracking:
-            return "Word Tracking mode listens to your speech and keeps the highlighted word close to what you are actually saying."
+            return String(localized: "Word Tracking mode listens to your speech and keeps the highlighted word close to what you are actually saying.")
         }
     }
 
@@ -913,8 +913,8 @@ final class IOSTeleprompterModel {
             currentDocumentURL = draft.currentDocumentURL
             if draft.document.hasAnyContent || draft.currentDocumentURL != nil {
                 launchRecoveryMessage = draft.currentDocumentURL == nil
-                    ? "Restored your last local draft."
-                    : "Restored your last open script and local edits."
+                    ? String(localized: "Restored your last local draft.")
+                    : String(localized: "Restored your last open script and local edits.")
             } else {
                 launchRecoveryMessage = nil
             }
