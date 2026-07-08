@@ -307,7 +307,17 @@ class SpeechRecognizer {
 
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: NotchSettings.shared.speechLocale))
         guard let speechRecognizer, speechRecognizer.isAvailable else {
-            error = "Speech recognizer not available"
+            // Availability is often transient (the recognition service churns
+            // briefly after a task cancellation or device change). Giving up
+            // here leaves the engine stopped and the app deaf — retry like
+            // the invalid-format guard below does.
+            if retryCount < maxRetries {
+                retryCount += 1
+                scheduleBeginRecognition(after: 0.5)
+            } else {
+                error = "Speech recognizer not available"
+                isListening = false
+            }
             return
         }
 
@@ -515,8 +525,15 @@ class SpeechRecognizer {
 
         // Start new recognition task
         guard let speechRecognizer, speechRecognizer.isAvailable else {
-            error = "Speech recognizer not available"
-            isListening = false
+            // Transient unavailability — fall back to a full session restart
+            // with retries rather than going permanently deaf.
+            if retryCount < maxRetries {
+                retryCount += 1
+                scheduleBeginRecognition(after: 0.5)
+            } else {
+                error = "Speech recognizer not available"
+                isListening = false
+            }
             return
         }
 
