@@ -503,8 +503,9 @@ struct WordFlowLayout: View {
     private func buildItems() -> [WordItem] {
         var items: [WordItem] = []
         var offset = 0
+        let annotationFlags = SpeechTextAlignment.annotationFlags(for: words)
         for (i, word) in words.enumerated() {
-            let isAnnotation = Self.isAnnotationWord(word)
+            let isAnnotation = annotationFlags[i] || Self.isAnnotationWord(word)
             items.append(WordItem(id: i, word: word, charOffset: offset, isAnnotation: isAnnotation))
             offset += word.count + 1 // +1 for space
         }
